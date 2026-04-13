@@ -6,6 +6,14 @@ final class NotchWindow: NSPanel {
     static let maxExpandedHeight: CGFloat = 600
 
     private static let collapsedPadding: CGFloat = 8
+
+    static var notchInset: CGFloat {
+        let screen = bestScreen()
+        if #available(macOS 14.0, *), screen.safeAreaInsets.top > 0 {
+            return screen.safeAreaInsets.top
+        }
+        return 0
+    }
     var customX: CGFloat?
     private(set) var isDragging = false
     private var dragTracking = false
@@ -17,7 +25,7 @@ final class NotchWindow: NSPanel {
         let width: CGFloat = 220
         let height: CGFloat = 50
         let x = screen.frame.origin.x + (screen.frame.width - width) / 2
-        let y = screen.frame.origin.y + screen.frame.height - height
+        let y = screen.frame.origin.y + screen.frame.height - Self.notchInset - height
 
         super.init(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
@@ -113,7 +121,7 @@ final class NotchWindow: NSPanel {
         } else {
             x = screen.frame.origin.x + (screen.frame.width - w) / 2
         }
-        let screenTop = screen.frame.origin.y + screen.frame.height
+        let screenTop = screen.frame.origin.y + screen.frame.height - Self.notchInset
         setFrameDirect(NSRect(x: x, y: screenTop - h, width: w, height: h), display: display)
     }
 
@@ -153,7 +161,7 @@ final class NotchWindow: NSPanel {
                 let newX = max(screen.frame.origin.x,
                                min(dragStartWindowX + dx,
                                    screen.frame.origin.x + screen.frame.width - frame.width))
-                let topY = screen.frame.origin.y + screen.frame.height - frame.height
+                let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frame.height
                 setFrameDirect(NSRect(x: newX, y: topY, width: frame.width, height: frame.height))
             } else {
                 super.sendEvent(event)
@@ -179,7 +187,7 @@ final class NotchWindow: NSPanel {
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frameRect.height
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
@@ -196,7 +204,7 @@ final class NotchWindow: NSPanel {
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frameRect.height
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
