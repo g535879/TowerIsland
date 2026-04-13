@@ -43,17 +43,8 @@ Tower Island 以一个紧凑的药丸形状悬浮在屏幕顶部。当 AI Agent 
 ### 构建与运行
 
 ```bash
-# 克隆仓库
 git clone https://github.com/g535879/TowerIsland.git
 cd TowerIsland
-
-# 构建（调试版）
-swift build
-
-# 直接运行
-.build/debug/TowerIsland
-
-# 或构建 Release 版 .app 包（含 bridge 安装）
 bash Scripts/build.sh
 open ".build/Tower Island.app"
 ```

@@ -43,17 +43,8 @@ Tower Island sits at the top of your screen as a compact pill. When your AI agen
 ### Build & Run
 
 ```bash
-# Clone the repo
 git clone https://github.com/g535879/TowerIsland.git
 cd TowerIsland
-
-# Build (debug)
-swift build
-
-# Run directly
-.build/debug/TowerIsland
-
-# Or build a release .app bundle with bridge installer
 bash Scripts/build.sh
 open ".build/Tower Island.app"
 ```
