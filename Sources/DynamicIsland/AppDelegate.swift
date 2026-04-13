@@ -129,15 +129,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let previousPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
 
-        let w = NSWindow(
+        let w = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 480),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        w.isFloatingPanel = true
+        w.hidesOnDeactivate = false
         w.title = "Tower Island Settings"
-        w.center()
+        if let screen = notchWindow?.screen ?? NSScreen.main {
+            let sf = screen.visibleFrame
+            let x = sf.origin.x + (sf.width - 680) / 2
+            let y = sf.origin.y + (sf.height - 480) / 2
+            w.setFrameOrigin(NSPoint(x: x, y: y))
+        } else {
+            w.center()
+        }
         w.isReleasedWhenClosed = false
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         w.contentView = NSHostingView(
             rootView: PreferencesView()
                 .environment(sessionManager)

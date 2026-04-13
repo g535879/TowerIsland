@@ -18,6 +18,31 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
+ICON_SRC="$PROJECT_DIR/Assets/app-icon.png"
+ICON_WORK="$BUILD_DIR/app-icon-normalized.png"
+ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
+if [[ -f "$ICON_SRC" ]]; then
+    echo "==> Building app icon..."
+    rm -rf "$ICONSET_DIR"
+    mkdir -p "$ICONSET_DIR"
+    # Normalize to PNG (source may be JPEG with a .png name) so iconutil accepts the iconset.
+    sips -s format png "$ICON_SRC" --out "$ICON_WORK" >/dev/null
+    sips -z 16 16 "$ICON_WORK" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
+    sips -z 32 32 "$ICON_WORK" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
+    sips -z 32 32 "$ICON_WORK" --out "$ICONSET_DIR/icon_32x32.png" >/dev/null
+    sips -z 64 64 "$ICON_WORK" --out "$ICONSET_DIR/icon_32x32@2x.png" >/dev/null
+    sips -z 128 128 "$ICON_WORK" --out "$ICONSET_DIR/icon_128x128.png" >/dev/null
+    sips -z 256 256 "$ICON_WORK" --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null
+    sips -z 256 256 "$ICON_WORK" --out "$ICONSET_DIR/icon_256x256.png" >/dev/null
+    sips -z 512 512 "$ICON_WORK" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null
+    sips -z 512 512 "$ICON_WORK" --out "$ICONSET_DIR/icon_512x512.png" >/dev/null
+    sips -z 1024 1024 "$ICON_WORK" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
+    iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    rm -rf "$ICONSET_DIR" "$ICON_WORK"
+else
+    echo "Warning: $ICON_SRC not found; app bundle will have no custom icon."
+fi
+
 cp "$BUILD_DIR/release/TowerIsland" "$APP_BUNDLE/Contents/MacOS/TowerIsland"
 cp "$BUILD_DIR/release/DIBridge" "$APP_BUNDLE/Contents/MacOS/di-bridge"
 
@@ -55,6 +80,10 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 </dict>
 </plist>
 PLIST
+
+if [[ -f "$APP_BUNDLE/Contents/Resources/AppIcon.icns" ]]; then
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP_BUNDLE/Contents/Info.plist"
+fi
 
 cat > "$APP_BUNDLE/Contents/PkgInfo" << 'EOF'
 APPL????
