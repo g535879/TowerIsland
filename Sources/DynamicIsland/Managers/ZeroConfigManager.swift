@@ -156,22 +156,15 @@ enum ZeroConfigManager {
         for (hookType, hookArg, timeout) in hookMapping {
             var hookList = hooks[hookType] as? [[String: Any]] ?? []
 
-            // Remove stale entries (wrong guard pattern or missing guard)
             hookList.removeAll { entry in
                 let cmds = entry["hooks"] as? [[String: Any]] ?? []
                 return cmds.contains {
                     guard let cmd = $0["command"] as? String else { return false }
-                    return cmd.contains("di-bridge") && (
-                        !cmd.contains("VSCODE_PID")
-                        || (hookArg == "PermissionRequest" && cmd.contains("|| true"))
-                    )
+                    return cmd.contains("di-bridge")
                 }
             }
 
-            let alreadyConfigured = hookList.contains { entry in
-                let cmds = entry["hooks"] as? [[String: Any]] ?? []
-                return cmds.contains { ($0["command"] as? String)?.contains("di-bridge") == true }
-            }
+            let alreadyConfigured = false
             if !alreadyConfigured {
                 // PermissionRequest must preserve di-bridge exit code so deny works;
                 // other hooks are fire-and-forget so || true is safe.
@@ -237,23 +230,21 @@ enum ZeroConfigManager {
 
         for (hookType, hookArg, timeout) in hookMapping {
             var hookList = hooks[hookType] as? [[String: Any]] ?? []
-            let alreadyConfigured = hookList.contains { entry in
+            hookList.removeAll { entry in
                 let cmds = entry["hooks"] as? [[String: Any]] ?? []
                 return cmds.contains { ($0["command"] as? String)?.contains("di-bridge") == true }
             }
-            if !alreadyConfigured {
-                hookList.append([
-                    "matcher": "*",
-                    "hooks": [
-                        [
-                            "type": "command",
-                            "command": "\(bridgePath) --agent codex --hook \(hookArg)",
-                            "timeout": timeout
-                        ] as [String: Any]
-                    ]
-                ] as [String: Any])
-                hooks[hookType] = hookList
-            }
+            hookList.append([
+                "matcher": "*",
+                "hooks": [
+                    [
+                        "type": "command",
+                        "command": "\(bridgePath) --agent codex --hook \(hookArg)",
+                        "timeout": timeout
+                    ] as [String: Any]
+                ]
+            ] as [String: Any])
+            hooks[hookType] = hookList
         }
 
         config["hooks"] = hooks
