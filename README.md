@@ -44,8 +44,8 @@ Tower Island sits at the top of your screen as a compact pill. When your AI agen
 
 ```bash
 # Clone the repo
-git clone https://github.com/user/tower-island.git
-cd tower-island
+git clone https://github.com/g535879/TowerIsland.git
+cd TowerIsland
 
 # Build (debug)
 swift build
