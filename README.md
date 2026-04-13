@@ -17,9 +17,9 @@
   <img src="Assets/demo.gif" width="560" alt="Tower Island Demo">
 </p>
 
-| Collapsed | Expanded |
-|:---------:|:--------:|
-| <img src="Assets/screenshots/collapsed.png" width="280" alt="Collapsed"> | <img src="Assets/screenshots/expanded.png" width="280" alt="Expanded"> |
+| Collapsed | Expanded | Question |
+|:---------:|:--------:|:--------:|
+| <img src="Assets/screenshots/collapsed.png" width="220" alt="Collapsed"> | <img src="Assets/screenshots/expanded.png" width="220" alt="Expanded"> | <img src="Assets/screenshots/question.png" width="220" alt="Question"> |
 
 ## What It Does
 
