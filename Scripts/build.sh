@@ -58,9 +58,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>dev.towerisland.app</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>1.1.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.1</string>
     <key>CFBundleExecutable</key>
     <string>TowerIsland</string>
     <key>CFBundlePackageType</key>

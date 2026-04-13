@@ -74,8 +74,10 @@ struct PreferencesView: View {
                         Text(pane.title)
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .foregroundStyle(selection == pane ? .primary : .secondary)
                     .frame(width: 72, height: 44)
+                    // Plain buttons only hit-test non-transparent subviews by default; include label + padding.
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .foregroundStyle(selection == pane ? .primary : .secondary)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(selection == pane ? Color.accentColor.opacity(0.12) : .clear)
