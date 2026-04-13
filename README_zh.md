@@ -11,6 +11,16 @@
   在屏幕顶部的浮动面板中，统一监控 Claude Code、Cursor、Codex、OpenCode、Gemini CLI 等多个 AI Agent。
 </p>
 
+## 演示
+
+<p align="center">
+  <img src="Assets/demo.gif" width="560" alt="Tower Island 演示">
+</p>
+
+| 收起状态 | 展开状态 |
+|:-------:|:-------:|
+| <img src="Assets/screenshots/collapsed.png" width="280" alt="收起"> | <img src="Assets/screenshots/expanded.png" width="280" alt="展开"> |
+
 ## 功能介绍
 
 Tower Island 以一个紧凑的药丸形状悬浮在屏幕顶部。当 AI Agent 工作时，它会实时显示状态。鼠标悬停即可展开，查看所有活跃会话的详细信息。

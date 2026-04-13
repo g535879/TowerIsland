@@ -11,6 +11,16 @@
   Monitor Claude Code, Cursor, Codex, OpenCode, Gemini CLI and more — from a single floating panel.
 </p>
 
+## Demo
+
+<p align="center">
+  <img src="Assets/demo.gif" width="560" alt="Tower Island Demo">
+</p>
+
+| Collapsed | Expanded |
+|:---------:|:--------:|
+| <img src="Assets/screenshots/collapsed.png" width="280" alt="Collapsed"> | <img src="Assets/screenshots/expanded.png" width="280" alt="Expanded"> |
+
 ## What It Does
 
 Tower Island sits at the top of your screen as a compact pill. When your AI agents are working, it shows their status at a glance. Hover to expand and see all active sessions with full details.
