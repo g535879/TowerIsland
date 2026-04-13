@@ -1,0 +1,71 @@
+import SwiftUI
+
+struct AgentActivityView: View {
+    let event: ToolEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: iconName)
+                .font(.system(size: 10))
+                .foregroundStyle(iconColor)
+                .frame(width: 16, height: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(event.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.8))
+
+                    if event.isComplete {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.green.opacity(0.7))
+                    }
+                }
+
+                Text(event.summary)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if let added = event.linesAdded, let removed = event.linesRemoved {
+                HStack(spacing: 4) {
+                    Text("+\(added)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.green.opacity(0.7))
+                    Text("-\(removed)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.red.opacity(0.7))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 3)
+    }
+
+    private var iconName: String {
+        switch event.tool.lowercased() {
+        case "read", "readfile": return "doc.text"
+        case "write", "writefile": return "doc.text.fill"
+        case "edit", "editfile", "str_replace": return "pencil"
+        case "bash", "shell", "terminal": return "terminal"
+        case "search", "grep", "ripgrep": return "magnifyingglass"
+        case "glob", "find", "ls", "list": return "folder"
+        default: return "gearshape"
+        }
+    }
+
+    private var iconColor: Color {
+        switch event.tool.lowercased() {
+        case "read", "readfile": return .blue.opacity(0.7)
+        case "write", "writefile": return .orange.opacity(0.7)
+        case "edit", "editfile", "str_replace": return .yellow.opacity(0.7)
+        case "bash", "shell", "terminal": return .green.opacity(0.7)
+        case "search", "grep", "ripgrep": return .purple.opacity(0.7)
+        default: return .white.opacity(0.4)
+        }
+    }
+}

@@ -1,0 +1,138 @@
+import SwiftUI
+
+struct ExpandedSessionView: View {
+    let session: AgentSession
+    @Environment(SessionManager.self) private var manager
+    var onDismiss: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sessionHeader
+            Divider().background(.white.opacity(0.08))
+            promptSection
+            Divider().background(.white.opacity(0.08))
+            activityFeed
+        }
+    }
+
+    private var sessionHeader: some View {
+        HStack(spacing: 10) {
+            AgentIcon(agentType: session.agentType, size: 28, status: session.status)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.agentType.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    Text(session.terminal.isEmpty ? session.agentType.shortName : session.terminal)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.4))
+                    Text(session.formattedDuration)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+            }
+
+            Spacer()
+
+            statusBadge
+
+            Button {
+                TerminalJumpManager.jump(to: session)
+                onDismiss?()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                    Text("Jump")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.white.opacity(0.1))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var promptSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("You:")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.3))
+            Text(session.prompt)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(3)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var activityFeed: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+                ForEach(session.events.suffix(20)) { event in
+                    AgentActivityView(event: event)
+                }
+                if let tool = session.currentTool {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 12, height: 12)
+                        Text("Running \(tool)...")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .frame(maxHeight: 200)
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch session.status {
+        case .active:
+            HStack(spacing: 3) {
+                Circle().fill(.blue).frame(width: 5, height: 5)
+                Text("Running")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.blue)
+            }
+        case .thinking:
+            badgeLabel("Thinking", color: .blue)
+        case .compacting:
+            badgeLabel("Compacting", color: .yellow)
+        case .waitingPermission:
+            badgeLabel("Permission", color: .orange)
+        case .waitingAnswer:
+            badgeLabel("Question", color: .blue)
+        case .waitingPlanReview:
+            badgeLabel("Review", color: .purple)
+        case .idle:
+            badgeLabel("Done", color: .green)
+        case .completed:
+            badgeLabel("Done", color: .green)
+        case .error:
+            badgeLabel("Error", color: .red)
+        }
+    }
+
+    private func badgeLabel(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15))
+            .clipShape(Capsule())
+    }
+}
