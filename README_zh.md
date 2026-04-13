@@ -1,8 +1,15 @@
 中文 | [English](README.md)
 
-# Tower Island
+<p align="center">
+  <img src="Assets/app-icon.png" width="128" alt="Tower Island">
+</p>
 
-一款 macOS 菜单栏应用，为你的所有 AI 编程助手提供一个**灵动岛风格的控制塔**。在屏幕顶部的一个浮动面板中，统一监控 Claude Code、Cursor、Codex、OpenCode、Gemini CLI 等多个 AI Agent 的工作状态。
+<h1 align="center">Tower Island</h1>
+
+<p align="center">
+  一款 macOS 灵动岛风格的 AI 编程助手控制塔。<br>
+  在屏幕顶部的浮动面板中，统一监控 Claude Code、Cursor、Codex、OpenCode、Gemini CLI 等多个 AI Agent。
+</p>
 
 ## 功能介绍
 
@@ -32,15 +39,25 @@ Tower Island 以一个紧凑的药丸形状悬浮在屏幕顶部。当 AI Agent 
 | Gemini CLI | 配置 hook | 基础支持 |
 | Copilot (VS Code) | 配置 hook | 基础支持 |
 
-## 快速开始
+## 安装
 
-### 环境要求
+### 方式一：下载 DMG 安装（推荐）
 
-- macOS 14.0 (Sonoma) 或更高版本
-- Swift 5.9+
-- 至少安装一个支持的 AI 编程助手
+1. 前往 [Releases](https://github.com/g535879/TowerIsland/releases) 下载最新的 `.dmg` 文件
+2. 打开 DMG，将 **Tower Island** 拖入应用程序文件夹
+3. 启动 Tower Island
 
-### 构建与运行
+> **macOS 安全提示：** 由于应用未经 Apple 开发者签名，首次打开时 macOS 会拦截。解除方法：
+>
+> ```bash
+> xattr -cr /Applications/Tower\ Island.app
+> ```
+>
+> 或者：**系统设置 → 隐私与安全性 → 下滑找到 Tower Island 的提示 → 点击「仍要打开」**
+
+### 方式二：从源码构建
+
+**环境要求：** macOS 14.0+、Swift 5.9+
 
 ```bash
 git clone https://github.com/g535879/TowerIsland.git

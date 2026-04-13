@@ -1,8 +1,15 @@
 [中文](README_zh.md) | English
 
-# Tower Island
+<p align="center">
+  <img src="Assets/app-icon.png" width="128" alt="Tower Island">
+</p>
 
-A macOS menu bar app that gives you a **Dynamic Island-style control tower** for all your AI coding agents. Monitor Claude Code, Cursor, Codex, OpenCode, Gemini CLI and more — all from a single floating panel at the top of your screen.
+<h1 align="center">Tower Island</h1>
+
+<p align="center">
+  A macOS Dynamic Island-style control tower for all your AI coding agents.<br>
+  Monitor Claude Code, Cursor, Codex, OpenCode, Gemini CLI and more — from a single floating panel.
+</p>
 
 ## What It Does
 
@@ -32,15 +39,25 @@ Tower Island sits at the top of your screen as a compact pill. When your AI agen
 | Gemini CLI | Config hook | Basic support |
 | Copilot (VS Code) | Config hook | Basic support |
 
-## Quick Start
+## Install
 
-### Prerequisites
+### Option 1: Download DMG (Recommended)
 
-- macOS 14.0 (Sonoma) or later
-- Swift 5.9+
-- At least one supported AI coding agent installed
+1. Go to [Releases](https://github.com/g535879/TowerIsland/releases) and download the latest `.dmg` file
+2. Open the DMG and drag **Tower Island** to your Applications folder
+3. Launch Tower Island
 
-### Build & Run
+> **macOS Gatekeeper notice:** Since the app is not signed with an Apple Developer certificate, macOS will block it on first launch. To bypass:
+>
+> ```bash
+> xattr -cr /Applications/Tower\ Island.app
+> ```
+>
+> Or: **System Settings → Privacy & Security → scroll down → click "Open Anyway"** next to the Tower Island warning.
+
+### Option 2: Build from Source
+
+**Prerequisites:** macOS 14.0+, Swift 5.9+
 
 ```bash
 git clone https://github.com/g535879/TowerIsland.git
