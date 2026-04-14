@@ -35,8 +35,8 @@ struct NotchContentView: View {
         isExpanded ? expandedWidth : pillWidth
     }
 
-    private var collapsedOuterHeight: CGFloat { 42 }
     private var collapsedShapeHeight: CGFloat { 32 }
+    private var collapsedOuterHeight: CGFloat { collapsedShapeHeight }
 
     private var contentHeight: CGFloat {
         isExpanded ? expandedHeight + 8 : collapsedOuterHeight

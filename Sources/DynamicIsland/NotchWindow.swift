@@ -6,7 +6,8 @@ final class NotchWindow: NSPanel {
     static let maxExpandedWidth: CGFloat = 520
     static let maxExpandedHeight: CGFloat = 600
 
-    private static let collapsedPadding: CGFloat = 8
+    private static let expandedPadding: CGFloat = 8
+    private static let collapsedHitHeight: CGFloat = 32
 
     static func islandTopOffset(for _: NSScreen) -> CGFloat { 0 }
 
@@ -123,8 +124,9 @@ final class NotchWindow: NSPanel {
 
     func resizeToFit(contentWidth: CGFloat, contentHeight: CGFloat, display: Bool = true) {
         let screen = Self.bestScreen()
-        let w = contentWidth + Self.collapsedPadding * 2
-        let h = contentHeight + Self.collapsedPadding
+        let padding = Self.padding(forContentHeight: contentHeight)
+        let w = contentWidth + padding * 2
+        let h = contentHeight + padding
         let x: CGFloat
         if let cx = customX {
             x = max(screen.frame.origin.x,
@@ -143,8 +145,8 @@ final class NotchWindow: NSPanel {
 
     func resizeToFitCollapse(contentWidth: CGFloat, contentHeight: CGFloat) {
         let screen = Self.bestScreen()
-        let targetW = contentWidth + Self.collapsedPadding * 2
-        let targetH = contentHeight + Self.collapsedPadding
+        let targetW = contentWidth
+        let targetH = contentHeight
         let targetX: CGFloat
         if let cx = customX {
             targetX = max(screen.frame.origin.x,
@@ -180,7 +182,21 @@ final class NotchWindow: NSPanel {
     }
 
     @objc private func screenDidChange(_ note: Notification) {
-        resizeToFit(contentWidth: frame.width, contentHeight: frame.height)
+        let screen = Self.bestScreen()
+        let x: CGFloat
+        if let cx = customX {
+            x = max(screen.frame.origin.x,
+                    min(cx - frame.width / 2, screen.frame.origin.x + screen.frame.width - frame.width))
+        } else {
+            x = screen.frame.origin.x + (screen.frame.width - frame.width) / 2
+        }
+        let screenTop = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen)
+        let y = screenTop - frame.height
+        setFrameDirect(NSRect(x: x, y: y, width: frame.width, height: frame.height), display: true)
+    }
+
+    private static func padding(forContentHeight contentHeight: CGFloat) -> CGFloat {
+        contentHeight <= collapsedHitHeight + 0.5 ? 0 : expandedPadding
     }
 
     // MARK: - Horizontal drag via sendEvent
