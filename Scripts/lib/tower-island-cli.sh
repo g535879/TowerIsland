@@ -68,6 +68,27 @@ tower_island_download_release_asset() {
         --clobber
 }
 
+tower_island_mount_dir_from_attach_output() {
+    local attach_output="$1"
+
+    printf '%s\n' "$attach_output" \
+        | awk -F '\t' '/\/Volumes\// {print $NF}' \
+        | tail -n 1
+}
+
+tower_island_cleanup_upgrade_artifacts() {
+    local mount_dir="${1:-}"
+    local tmpdir="${2:-}"
+
+    if [[ -n "$mount_dir" ]]; then
+        hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true
+    fi
+
+    if [[ -n "$tmpdir" ]]; then
+        rm -rf "$tmpdir"
+    fi
+}
+
 tower_island_upgrade() {
     if [[ "${TOWER_ISLAND_TEST_MODE:-0}" == "1" ]]; then
         echo "upgrade:test-mode"
@@ -97,20 +118,22 @@ tower_island_upgrade() {
 
     local tmpdir dmg_path mount_dir volume_app
     tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap 'tower_island_cleanup_upgrade_artifacts "" "$tmpdir"' EXIT
 
     dmg_path="$tmpdir/TowerIsland.dmg"
     echo "==> Downloading $tag from GitHub Releases..."
     tower_island_download_release_asset "$tag" "$dmg_path"
 
     echo "==> Mounting DMG..."
-    mount_dir="$(hdiutil attach "$dmg_path" -nobrowse -quiet | awk '/\/Volumes\// {print substr($0, index($0,$3))}' | tail -n 1)"
+    local attach_output
+    attach_output="$(hdiutil attach "$dmg_path" -nobrowse)"
+    mount_dir="$(tower_island_mount_dir_from_attach_output "$attach_output")"
     if [[ -z "$mount_dir" ]]; then
         echo "error: failed to mount DMG" >&2
         exit 1
     fi
 
-    trap 'hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true; rm -rf "$tmpdir"' EXIT
+    trap 'tower_island_cleanup_upgrade_artifacts "${mount_dir:-}" "${tmpdir:-}"' EXIT
 
     volume_app="$mount_dir/Tower Island.app"
     if [[ ! -d "$volume_app" ]]; then

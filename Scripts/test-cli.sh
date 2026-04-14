@@ -53,9 +53,31 @@ test_upgrade_command_dispatches() {
         || fail "expected test-mode dispatch, got: $output"
 }
 
+test_extracts_mount_dir_from_hdiutil_attach_output() {
+    local output mount_dir
+    output=$'/dev/disk16\tGUID_partition_scheme\t\n/dev/disk16s1\tApple_HFS\t/Volumes/Tower Island 7'
+
+    mount_dir="$(tower_island_mount_dir_from_attach_output "$output")"
+
+    [[ "$mount_dir" == "/Volumes/Tower Island 7" ]] \
+        || fail "expected mount dir, got: $mount_dir"
+}
+
+test_cleanup_upgrade_artifacts_allows_empty_mount_dir() {
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+
+    tower_island_cleanup_upgrade_artifacts "" "$tmpdir"
+
+    [[ ! -e "$tmpdir" ]] \
+        || fail "expected temp dir to be removed"
+}
+
 test_selects_dmg_asset_from_release_json
 test_rejects_release_without_dmg_asset
 test_help_for_empty_command
 test_upgrade_command_dispatches
+test_extracts_mount_dir_from_hdiutil_attach_output
+test_cleanup_upgrade_artifacts_allows_empty_mount_dir
 
 echo "CLI tests passed"
