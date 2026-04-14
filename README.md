@@ -17,12 +17,9 @@
   <img src="Assets/demo.gif" width="560" alt="Tower Island Demo">
 </p>
 
-To regenerate `demo.gif` and `Assets/screenshots/*.png` after UI changes, use the scripted demo data and capture checklist in **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md)** (`bash Scripts/demo-media.sh seed` / `question` / `cleanup`).
-
-|  | Collapsed | Expanded | Question |
-|:---:|:---------:|:--------:|:--------:|
-| **Notch** | <img src="Assets/screenshots/notch-collapsed.png" width="220" alt="Notch Collapsed"> | <img src="Assets/screenshots/notch-expanded.png" width="220" alt="Notch Expanded"> | <img src="Assets/screenshots/notch-question.png" width="220" alt="Notch Question"> |
-| **Non-notch** | <img src="Assets/screenshots/external-collapsed.png" width="220" alt="External Collapsed"> | <img src="Assets/screenshots/external-expanded.png" width="220" alt="External Expanded"> | <img src="Assets/screenshots/external-question.png" width="220" alt="External Question"> |
+| Collapsed (Notch) | Collapsed (External) | Expanded | Question |
+|:---------:|:---------:|:--------:|:--------:|
+| <img src="Assets/screenshots/notch-collapsed.png" width="220" alt="Notch Collapsed"> | <img src="Assets/screenshots/external-collapsed.png" width="220" alt="External Collapsed"> | <img src="Assets/screenshots/notch-expanded.png" width="220" alt="Expanded"> | <img src="Assets/screenshots/notch-question.png" width="220" alt="Question"> |
 
 ## What It Does
 
