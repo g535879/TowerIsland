@@ -13,6 +13,9 @@ APP_CLI_DIR="$APP_BUNDLE/Contents/Resources/cli"
 
 cd "$PROJECT_DIR"
 
+# shellcheck source=/dev/null
+source "$CLI_LIB_DIR/tower-island-cli.sh"
+
 echo "==> Building Tower Island..."
 swift build -c release
 
@@ -114,6 +117,7 @@ echo "Build complete!"
 echo "  App:    $APP_BUNDLE"
 echo "  Bridge: $BRIDGE_INSTALL_DIR/di-bridge"
 echo "  CLI:    $BRIDGE_INSTALL_DIR/tower-island"
+tower_island_print_path_guidance
 echo ""
 echo "To install, run:"
 echo "  cp -R \"$APP_BUNDLE\" /Applications/"

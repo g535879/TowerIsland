@@ -73,11 +73,45 @@ test_cleanup_upgrade_artifacts_allows_empty_mount_dir() {
         || fail "expected temp dir to be removed"
 }
 
+test_cli_bin_path_detected_in_path() {
+    PATH="/usr/bin:$HOME/.tower-island/bin:/bin"
+
+    tower_island_cli_bin_in_path
+}
+
+test_cli_bin_path_detected_as_missing() {
+    PATH="/usr/bin:/bin"
+
+    if tower_island_cli_bin_in_path; then
+        fail "expected tower-island bin path to be reported as missing"
+    fi
+}
+
+test_shell_profile_path_hint_for_zsh() {
+    local hint
+    hint="$(SHELL=/bin/zsh tower_island_shell_profile_path_hint)"
+
+    [[ "$hint" == *".zshrc"* ]] \
+        || fail "expected zsh profile hint, got: $hint"
+}
+
+test_shell_profile_path_hint_for_bash() {
+    local hint
+    hint="$(SHELL=/bin/bash tower_island_shell_profile_path_hint)"
+
+    [[ "$hint" == *".bash_profile"* ]] \
+        || fail "expected bash profile hint, got: $hint"
+}
+
 test_selects_dmg_asset_from_release_json
 test_rejects_release_without_dmg_asset
 test_help_for_empty_command
 test_upgrade_command_dispatches
 test_extracts_mount_dir_from_hdiutil_attach_output
 test_cleanup_upgrade_artifacts_allows_empty_mount_dir
+test_cli_bin_path_detected_in_path
+test_cli_bin_path_detected_as_missing
+test_shell_profile_path_hint_for_zsh
+test_shell_profile_path_hint_for_bash
 
 echo "CLI tests passed"

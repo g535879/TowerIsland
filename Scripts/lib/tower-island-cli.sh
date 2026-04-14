@@ -3,6 +3,7 @@ set -euo pipefail
 
 TOWER_ISLAND_REPO="${TOWER_ISLAND_REPO:-g535879/TowerIsland}"
 TOWER_ISLAND_APP_PATH="${TOWER_ISLAND_APP_PATH:-/Applications/Tower Island.app}"
+TOWER_ISLAND_BIN_DIR="${TOWER_ISLAND_BIN_DIR:-$HOME/.tower-island/bin}"
 
 tower_island_usage() {
     cat <<'EOF'
@@ -89,6 +90,46 @@ tower_island_cleanup_upgrade_artifacts() {
     fi
 }
 
+tower_island_cli_bin_in_path() {
+    case ":$PATH:" in
+        *":$TOWER_ISLAND_BIN_DIR:"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+tower_island_shell_profile_path_hint() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-}")"
+
+    case "$shell_name" in
+        zsh)
+            printf '%s\n' '~/.zshrc'
+            ;;
+        bash)
+            printf '%s\n' '~/.bash_profile'
+            ;;
+        fish)
+            printf '%s\n' '~/.config/fish/config.fish'
+            ;;
+        *)
+            printf '%s\n' 'your shell profile'
+            ;;
+    esac
+}
+
+tower_island_print_path_guidance() {
+    if tower_island_cli_bin_in_path; then
+        return 0
+    fi
+
+    local profile_hint
+    profile_hint="$(tower_island_shell_profile_path_hint)"
+
+    echo ""
+    echo "To run 'tower-island upgrade' from any directory, add this to $profile_hint:"
+    echo "  export PATH=\"$TOWER_ISLAND_BIN_DIR:\$PATH\""
+}
+
 tower_island_upgrade() {
     if [[ "${TOWER_ISLAND_TEST_MODE:-0}" == "1" ]]; then
         echo "upgrade:test-mode"
@@ -160,6 +201,7 @@ tower_island_upgrade() {
 
     echo "Upgraded Tower Island to $tag"
     echo "Release asset: $asset_api_url"
+    tower_island_print_path_guidance
 }
 
 tower_island_dispatch() {

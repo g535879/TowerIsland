@@ -85,6 +85,8 @@ If `tower-island` is not found, add this to your shell profile:
 export PATH="$HOME/.tower-island/bin:$PATH"
 ```
 
+`bash Scripts/build.sh` will also print the right profile file for your current shell after installing the CLI.
+
 ### Option 2: Build from Source
 
 **Prerequisites:** macOS 14.0+, Swift 5.9+

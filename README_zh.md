@@ -85,6 +85,8 @@ tower-island upgrade
 export PATH="$HOME/.tower-island/bin:$PATH"
 ```
 
+执行 `bash Scripts/build.sh` 后，也会根据你当前使用的 shell，提示应该把这行配置写到哪个文件里。
+
 ### 方式二：从源码构建
 
 **环境要求：** macOS 14.0+、Swift 5.9+
