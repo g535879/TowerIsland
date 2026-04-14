@@ -65,6 +65,26 @@ Tower Island sits at the top of your screen as a compact pill. When your AI agen
 >
 > Or: **System Settings → Privacy & Security → scroll down → click "Open Anyway"** next to the Tower Island warning.
 
+### CLI Upgrade
+
+Tower Island installs a companion CLI at `~/.tower-island/bin/tower-island`.
+
+If that directory is in your `PATH`, you can upgrade directly from GitHub Releases with:
+
+```bash
+tower-island upgrade
+```
+
+Requirements:
+- `gh` must be installed and authenticated
+- Tower Island must already be installed in `/Applications/Tower Island.app`
+
+If `tower-island` is not found, add this to your shell profile:
+
+```bash
+export PATH="$HOME/.tower-island/bin:$PATH"
+```
+
 ### Option 2: Build from Source
 
 **Prerequisites:** macOS 14.0+, Swift 5.9+
@@ -86,6 +106,7 @@ To verify or manually trigger configuration:
 - Toggle agents on/off as needed
 
 Under the hood, it installs a lightweight bridge binary (`di-bridge`) at `~/.tower-island/bin/` and registers hooks in each agent's config file.
+The same directory also contains the `tower-island` CLI used for in-place upgrades.
 
 ## Architecture
 

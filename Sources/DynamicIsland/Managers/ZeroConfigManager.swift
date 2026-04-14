@@ -11,6 +11,7 @@ enum ZeroConfigManager {
     private static let autoConfigKeyPrefix = "autoConfigure."
 
     static func configureAllAgents() {
+        syncCommandLineTools()
         for agent in AgentType.allCases where isAutoConfigEnabled(for: agent) {
             configure(agent)
         }
@@ -93,40 +94,50 @@ enum ZeroConfigManager {
     private static var bridgePath: String {
         let stable = "\(home)/.tower-island/bin/di-bridge"
         let bundled = Bundle.main.bundlePath + "/Contents/MacOS/di-bridge"
+        syncBundledFileIfNeeded(bundled: bundled, stable: stable)
+        return stable
+    }
+
+    private static func syncCommandLineTools() {
+        let binDir = "\(home)/.tower-island/bin"
+        ensureDir(binDir)
+        ensureDir("\(binDir)/lib")
+
+        syncBundledFileIfNeeded(
+            bundled: Bundle.main.bundlePath + "/Contents/MacOS/di-bridge",
+            stable: "\(binDir)/di-bridge"
+        )
+        syncBundledFileIfNeeded(
+            bundled: Bundle.main.bundlePath + "/Contents/Resources/cli/tower-island",
+            stable: "\(binDir)/tower-island"
+        )
+        syncBundledFileIfNeeded(
+            bundled: Bundle.main.bundlePath + "/Contents/Resources/cli/lib/tower-island-cli.sh",
+            stable: "\(binDir)/lib/tower-island-cli.sh"
+        )
+    }
+
+    private static func syncBundledFileIfNeeded(bundled: String, stable: String) {
         let fm = FileManager.default
+        guard fm.fileExists(atPath: bundled) else { return }
 
-        guard fm.fileExists(atPath: bundled) else {
-            return stable
-        }
+        ensureDir((stable as NSString).deletingLastPathComponent)
 
-        ensureDir("\(home)/.tower-island/bin")
-
-        let stableIsOutdated: Bool
+        let shouldCopy: Bool
         if fm.fileExists(atPath: stable),
            let stableAttr = try? fm.attributesOfItem(atPath: stable),
            let bundledAttr = try? fm.attributesOfItem(atPath: bundled),
            let stableMod = stableAttr[.modificationDate] as? Date,
            let bundledMod = bundledAttr[.modificationDate] as? Date {
-            stableIsOutdated = bundledMod > stableMod
+            shouldCopy = bundledMod > stableMod
         } else {
-            stableIsOutdated = true
+            shouldCopy = true
         }
 
-        if stableIsOutdated {
-            try? fm.removeItem(atPath: stable)
-            try? fm.copyItem(atPath: bundled, toPath: stable)
-        }
-
-        if fm.fileExists(atPath: stable),
-           let stableAttr = try? fm.attributesOfItem(atPath: stable),
-           let bundledAttr = try? fm.attributesOfItem(atPath: bundled),
-           let stableMod = stableAttr[.modificationDate] as? Date,
-           let bundledMod = bundledAttr[.modificationDate] as? Date,
-           bundledMod > stableMod {
-            return bundled
-        }
-
-        return stable
+        guard shouldCopy else { return }
+        try? fm.removeItem(atPath: stable)
+        try? fm.copyItem(atPath: bundled, toPath: stable)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stable)
     }
 
     // MARK: - Claude Code
