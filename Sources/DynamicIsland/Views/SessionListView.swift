@@ -12,7 +12,8 @@ struct SessionListView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 }

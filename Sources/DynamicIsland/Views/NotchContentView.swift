@@ -56,8 +56,8 @@ struct NotchContentView: View {
         case .collapsed: return 0
         case .expanded:
             let count = manager.visibleSessions.count
-            let listH = min(CGFloat(count) * 120 + 50, 480)
-            return Self.expandedPanelHeaderHeight + listH
+            let listH = min(CGFloat(count) * 80 + 30, 480)
+            return Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
         case .permission(let id):
             let perm = manager.sessions.first(where: { $0.id == id })?.pendingPermission
             var h: CGFloat = 42 + 1 + 30
@@ -211,8 +211,8 @@ struct NotchContentView: View {
         let target = targetSize(for: newState)
         if case .expanded = newState {
             let count = manager.visibleSessions.count
-            let listH = min(CGFloat(count) * 120 + 50, 480)
-            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH
+            let listH = min(CGFloat(count) * 80 + 30, 480)
+            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
         }
         onSizeChange?(target.width, target.height, true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -256,9 +256,9 @@ struct NotchContentView: View {
             h = collapsedOuterHeight
         case .expanded:
             let count = manager.visibleSessions.count
-            let listH = min(CGFloat(count) * 120 + 50, 480)
+            let listH = min(CGFloat(count) * 80 + 30, 480)
             w = 420
-            h = Self.expandedPanelHeaderHeight + listH + 8
+            h = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         case .permission:
             w = 440; h = expandedHeight + 8
         case .question(let id):
@@ -273,6 +273,8 @@ struct NotchContentView: View {
 
     /// Toolbar row in `expandedHeader` (~10+10 vertical padding + ~28 controls).
     private static let expandedPanelHeaderHeight: CGFloat = 48
+    /// Space between session list / cards and the bottom rounded edge of the expanded panel.
+    private static let expandedPanelBottomInset: CGFloat = 16
     /// Spans slightly past the camera housing; kept compact (competitor-style bar).
     private static let collapsedPillWidthNotched: CGFloat = 276
     /// Bottom-only rounding when docked under the notch (top edge flush with screen).
@@ -331,7 +333,7 @@ struct NotchContentView: View {
                 EmptyView()
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, Self.expandedPanelBottomInset)
     }
 
     private var expandedHeader: some View {
