@@ -8,5 +8,6 @@ let package = Package(
         .target(name: "DIShared"),
         .executableTarget(name: "TowerIsland", dependencies: ["DIShared"], path: "Sources/DynamicIsland"),
         .executableTarget(name: "DIBridge", dependencies: ["DIShared"]),
+        .testTarget(name: "TowerIslandTests", dependencies: ["TowerIsland"]),
     ]
 )

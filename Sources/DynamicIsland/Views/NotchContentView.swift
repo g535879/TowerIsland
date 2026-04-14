@@ -92,18 +92,18 @@ struct NotchContentView: View {
 
     /// 0 = collapsed strip (flat top), 1 = full expanded card — follows `shapeHeight` during spring so corners don’t snap before size.
     private var notchShapeOpenProgress: CGFloat {
-        let lo = collapsedShapeHeight
-        let hi = max(cachedExpandedShapeHeight, lo + 1)
-        return min(1, max(0, (shapeHeight - lo) / (hi - lo)))
+        NotchShapeGeometry.openProgress(
+            shapeHeight: shapeHeight,
+            cachedExpandedShapeHeight: cachedExpandedShapeHeight
+        )
     }
 
     private var notchTopCornerRadius: CGFloat {
-        Self.pillCornerRadiusExpanded * notchShapeOpenProgress
+        NotchShapeGeometry.topCornerRadius(state: state)
     }
 
     private var notchBottomCornerRadius: CGFloat {
-        Self.notchBarBottomCornerRadius
-            + (Self.pillCornerRadiusExpanded - Self.notchBarBottomCornerRadius) * notchShapeOpenProgress
+        NotchShapeGeometry.bottomCornerRadius(openProgress: notchShapeOpenProgress)
     }
 
     private static let expandSpring = Animation.spring(response: 0.4, dampingFraction: 0.82)
@@ -278,9 +278,6 @@ struct NotchContentView: View {
     /// Spans slightly past the camera housing; kept compact (competitor-style bar).
     private static let collapsedPillWidthNotched: CGFloat = 276
     /// Bottom-only rounding when docked under the notch (top edge flush with screen).
-    private static let notchBarBottomCornerRadius: CGFloat = 17
-    private static let pillCornerRadiusExpanded: CGFloat = 22
-
     private var pillWidth: CGFloat {
         if islandObscuredByNotch {
             return Self.collapsedPillWidthNotched
@@ -458,11 +455,15 @@ struct NotchContentView: View {
             }
         } else if !inside && isHovering && !isExpanded {
             withAnimation(.easeInOut(duration: 0.2)) { isHovering = false }
-        } else if !inside && expandedByHover && state == .expanded {
-            if Date().timeIntervalSince(expandedAt) > 0.5 {
-                collapse()
-                expandedByHover = false
-            }
+        } else if ExpandedAutoCollapsePolicy.shouldCollapseOnMouseExit(
+            isPointerInside: inside,
+            state: state,
+            expandedByHover: expandedByHover,
+            visibleSessionCount: manager.visibleSessions.count,
+            elapsedSinceExpand: Date().timeIntervalSince(expandedAt)
+        ) {
+            collapse()
+            expandedByHover = false
         }
     }
 
