@@ -320,9 +320,9 @@ enum ZeroConfigManager {
         ensureDir(pluginDir)
 
         let pluginSource = #"""
-        const { spawn, execSync } = require("child_process");
-        const os = require("os");
-        const BRIDGE = os.homedir() + "/.tower-island/bin/di-bridge";
+        import { spawn, execSync } from "child_process";
+        import { homedir } from "os";
+        const BRIDGE = homedir() + "/.tower-island/bin/di-bridge";
         function sendViaBridge(hookType, sessionId, data) {
           try {
             const stdin = JSON.stringify({ ...data, session_id: sessionId });
@@ -345,6 +345,14 @@ enum ZeroConfigManager {
             } catch { resolve(null); }
           });
         }
+        // One active question bridge per session; kill the old one when a newer event
+        // arrives so only the latest rid ever gets replied to.
+        const activeQ = new Map();
+        // After the user answers, cache the answer briefly so that follow-up duplicate
+        // events (same question, same options) from OpenCode get auto-replied without
+        // showing the question panel again.
+        const answeredQ = new Map(); // sid -> { answer, opts, ts }
+        const answeringQ = new Set(); // sids with an active askSequentially loop
         export default async ({ client, serverUrl }) => {
           const serverPort = serverUrl ? parseInt(serverUrl.port) || 4096 : 4096;
           const internalFetch = client?._client?.getConfig?.()?.fetch || null;
@@ -384,12 +392,54 @@ enum ZeroConfigManager {
             if (t === "question.asked" && p.id && p.sessionID) {
               const rid = p.id, sid = `opencode-${p.sessionID}`;
               const qs = p.questions||[];
-              const qt = qs.map(q=>q.question||q.header||"").filter(Boolean).join("\n");
-              const opts = qs.flatMap(q=>(q.options||[]).map(o=>o.label||o.description||"")).filter(Boolean);
-              if (internalFetch) {
-                sendInteractive("question", sid, { question:qt, options:opts })
-                  .then(async (r)=>{ if(!r||!r.output)return; try{ await internalFetch(new Request(`http://localhost:${serverPort}/question/${rid}/reply`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({answers:qs.map(()=>[r.output])})}));}catch{} });
-              } else { sendViaBridge("question", sid, { question:qt, options:opts }); }
+              const allQt = qs.map(q=>q.question||q.header||"").filter(Boolean).join("\n");
+              if (!allQt.trim() || (allQt.trim() === "Question" && !qs.some(q=>(q.options||[]).length))) return;
+              if (!internalFetch) {
+                const opts = qs.flatMap(q=>(q.options||[]).map(o=>o.label||o.description||"")).filter(Boolean);
+                sendViaBridge("question", sid, { question:allQt, options:opts });
+                return;
+              }
+              // If we're already walking through a multi-question batch for this
+              // session, ignore the re-fired event from OpenCode.
+              if (answeringQ.has(sid)) {
+                return;
+              }
+              // Dedup: if we just answered the exact same batch, auto-reply.
+              const prev = answeredQ.get(sid);
+              const allOpts = qs.flatMap(q=>(q.options||[]).map(o=>o.label||o.description||"")).filter(Boolean);
+              if (prev && Date.now()-prev.ts < 2000 && prev.rid === rid) return;
+              // Kill any previous bridge for this session.
+              const prevBridge = activeQ.get(sid);
+              if (prevBridge) { try { prevBridge.kill("SIGTERM"); } catch {} activeQ.delete(sid); }
+              // Walk through questions one at a time via Tower Island.
+              async function askSequentially() {
+                answeringQ.add(sid);
+                try {
+                  const answers = [];
+                  for (let i = 0; i < qs.length; i++) {
+                    const q = qs[i];
+                    const qText = (q.header ? q.header + ": " : "") + (q.question || "");
+                    const qOpts = (q.options||[]).map(o=>o.label||o.description||"").filter(Boolean);
+                    if (!qText.trim() && !qOpts.length) { answers.push([""]); continue; }
+                    const label = qs.length > 1 ? `[${i+1}/${qs.length}] ${qText}` : qText;
+                    const answer = await new Promise((resolve) => {
+                      const child = spawn(BRIDGE, ["--agent","opencode","--hook","question","--session",sid], { stdio:["pipe","pipe","pipe"] });
+                      activeQ.set(sid, child);
+                      child.stdin.write(JSON.stringify({ question: label, options: qOpts })); child.stdin.end();
+                      let out = "";
+                      child.stdout.on("data", d => { out += d.toString(); });
+                      child.on("close", () => { if (activeQ.get(sid)===child) activeQ.delete(sid); resolve(out.trim()); });
+                      child.on("error", () => { if (activeQ.get(sid)===child) activeQ.delete(sid); resolve(""); });
+                      setTimeout(() => { try { child.kill(); } catch {} }, 300000);
+                    });
+                    if (!answer) return;
+                    answers.push([answer]);
+                  }
+                  answeredQ.set(sid, { rid, opts: allOpts, ts: Date.now() });
+                  try { await internalFetch(new Request(`http://localhost:${serverPort}/question/${rid}/reply`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({answers}) })); } catch {}
+                } finally { answeringQ.delete(sid); }
+              }
+              askSequentially().catch(()=>{ answeringQ.delete(sid); });
               return;
             }
             if ((t==="question.replied"||t==="question.rejected") && p.sessionID) { sendViaBridge("notification",`opencode-${p.sessionID}`,{status:t==="question.replied"?"Question answered":"Question dismissed"}); return; }
@@ -417,6 +467,17 @@ enum ZeroConfigManager {
         """#
 
         try? pluginSource.write(toFile: pluginPath, atomically: true, encoding: String.Encoding.utf8)
+
+        let configPath = "\(home)/.config/opencode/config.json"
+        let pluginURL = "file://\(pluginPath)"
+        var config = readJSON(configPath) ?? ["$schema": "https://opencode.ai/config.json"]
+        var plugins = config["plugin"] as? [String] ?? []
+        if !plugins.contains(pluginURL) {
+            plugins.removeAll { ($0 as? String)?.contains("tower-island") == true || ($0 as? String)?.contains("open-island") == true || ($0 as? String)?.contains("dynamic-island") == true || ($0 as? String)?.contains("vibe-island") == true }
+            plugins.append(pluginURL)
+            config["plugin"] = plugins
+            writeJSON(configPath, config)
+        }
     }
 
     // MARK: - Droid

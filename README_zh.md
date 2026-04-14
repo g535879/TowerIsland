@@ -17,9 +17,12 @@
   <img src="Assets/demo.gif" width="560" alt="Tower Island 演示">
 </p>
 
-| 收起状态 | 展开状态 | 问题回答 |
-|:-------:|:-------:|:-------:|
-| <img src="Assets/screenshots/collapsed.png" width="220" alt="收起"> | <img src="Assets/screenshots/expanded.png" width="220" alt="展开"> | <img src="Assets/screenshots/question.png" width="220" alt="问题"> |
+更新录屏与截图素材时，可使用 **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md)** 中的测试数据与拍摄说明（`bash Scripts/demo-media.sh seed` / `question` / `cleanup`）。
+
+|  | 收起状态 | 展开状态 | 问题回答 |
+|:---:|:-------:|:-------:|:-------:|
+| **刘海屏** | <img src="Assets/screenshots/notch-collapsed.png" width="220" alt="刘海屏收起"> | <img src="Assets/screenshots/notch-expanded.png" width="220" alt="刘海屏展开"> | <img src="Assets/screenshots/notch-question.png" width="220" alt="刘海屏问题"> |
+| **外接屏** | <img src="Assets/screenshots/external-collapsed.png" width="220" alt="外接屏收起"> | <img src="Assets/screenshots/external-expanded.png" width="220" alt="外接屏展开"> | <img src="Assets/screenshots/external-question.png" width="220" alt="外接屏问题"> |
 
 ## 功能介绍
 

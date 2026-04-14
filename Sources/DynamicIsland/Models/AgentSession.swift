@@ -168,6 +168,9 @@ struct PendingQuestion {
     let text: String
     let options: [String]
     let respond: @Sendable (String) -> Void
+    /// Closes the socket fd without sending a response (used when this question is
+    /// superseded by a newer event or filtered as a stub).
+    let cancel: (@Sendable () -> Void)?
 }
 
 struct PendingPlanReview {

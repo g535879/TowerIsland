@@ -11,6 +11,7 @@ enum IslandState: Equatable {
 struct NotchContentView: View {
     @Environment(SessionManager.self) private var manager
     @Environment(AudioEngine.self) private var audio
+    @State private var islandObscuredByNotch = false
     @State private var state: IslandState = .collapsed
     @State private var isHovering = false
     @State private var expandedByHover = false
@@ -20,6 +21,9 @@ struct NotchContentView: View {
     @State private var hoverTimer: Timer?
     @State private var lastCollapseAt: Date = .distantPast
     @State private var expandPending = false
+    @State private var collapseAnimating = false
+    /// Last known expanded `shapeHeight` (black panel), used to interpolate notch corner radii with `shapeHeight` during spring (avoids boolean snap).
+    @State private var cachedExpandedShapeHeight: CGFloat = 220
     @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 3.0
     @AppStorage("smartSuppression") private var smartSuppression = true
     @AppStorage("autoHideWhenNoActiveSessions") private var autoHideWhenNoActiveSessions = false
@@ -31,8 +35,11 @@ struct NotchContentView: View {
         isExpanded ? expandedWidth : pillWidth
     }
 
+    private var collapsedOuterHeight: CGFloat { 42 }
+    private var collapsedShapeHeight: CGFloat { 32 }
+
     private var contentHeight: CGFloat {
-        isExpanded ? expandedHeight + 8 : 48
+        isExpanded ? expandedHeight + 8 : collapsedOuterHeight
     }
 
     private var expandedWidth: CGFloat {
@@ -49,7 +56,8 @@ struct NotchContentView: View {
         case .collapsed: return 0
         case .expanded:
             let count = manager.visibleSessions.count
-            return min(CGFloat(count) * 120 + 50, 480)
+            let listH = min(CGFloat(count) * 120 + 50, 480)
+            return Self.expandedPanelHeaderHeight + listH
         case .permission(let id):
             let perm = manager.sessions.first(where: { $0.id == id })?.pendingPermission
             var h: CGFloat = 42 + 1 + 30
@@ -75,7 +83,27 @@ struct NotchContentView: View {
     }
 
     private var shapeHeight: CGFloat {
-        isExpanded ? expandedHeight : 36
+        isExpanded ? expandedHeight : collapsedShapeHeight
+    }
+
+    private var pillFillColor: Color { IslandStyle.surface }
+
+    private var pillStrokeOpacity: CGFloat { IslandStyle.strokeOpacity }
+
+    /// 0 = collapsed strip (flat top), 1 = full expanded card — follows `shapeHeight` during spring so corners don’t snap before size.
+    private var notchShapeOpenProgress: CGFloat {
+        let lo = collapsedShapeHeight
+        let hi = max(cachedExpandedShapeHeight, lo + 1)
+        return min(1, max(0, (shapeHeight - lo) / (hi - lo)))
+    }
+
+    private var notchTopCornerRadius: CGFloat {
+        Self.pillCornerRadiusExpanded * notchShapeOpenProgress
+    }
+
+    private var notchBottomCornerRadius: CGFloat {
+        Self.notchBarBottomCornerRadius
+            + (Self.pillCornerRadiusExpanded - Self.notchBarBottomCornerRadius) * notchShapeOpenProgress
     }
 
     private static let expandSpring = Animation.spring(response: 0.4, dampingFraction: 0.82)
@@ -84,32 +112,60 @@ struct NotchContentView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: isExpanded ? 22 : 18, style: .continuous)
-                .fill(.black)
-                .shadow(color: .white.opacity(isExpanded ? 0.06 : 0), radius: 20, y: 4)
-                .overlay {
-                    RoundedRectangle(cornerRadius: isExpanded ? 22 : 18, style: .continuous)
-                        .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
-                }
-                .frame(width: shapeWidth, height: shapeHeight)
+            UnevenRoundedRectangle(
+                topLeadingRadius: notchTopCornerRadius,
+                bottomLeadingRadius: notchBottomCornerRadius,
+                bottomTrailingRadius: notchBottomCornerRadius,
+                topTrailingRadius: notchTopCornerRadius,
+                style: .continuous
+            )
+            .fill(pillFillColor)
+            .shadow(
+                color: .white.opacity(0.04 + 0.02 * notchShapeOpenProgress),
+                radius: 10 + 10 * notchShapeOpenProgress,
+                y: 3 + notchShapeOpenProgress
+            )
+            .overlay {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: notchTopCornerRadius,
+                    bottomLeadingRadius: notchBottomCornerRadius,
+                    bottomTrailingRadius: notchBottomCornerRadius,
+                    topTrailingRadius: notchTopCornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(.white.opacity(pillStrokeOpacity), lineWidth: 0.5)
+            }
+            .frame(width: shapeWidth, height: shapeHeight)
 
             expandedContent
-                .frame(width: expandedWidth > 0 ? expandedWidth : 420)
+                .frame(width: expandedWidth > 0 ? expandedWidth : 420,
+                       height: isExpanded ? nil : 0, alignment: .top)
+                .clipped()
                 .opacity(showContent ? 1 : 0)
                 .allowsHitTesting(showContent)
+                .zIndex(1)
 
-            CollapsedPillView(isHovering: isHovering) {
+            CollapsedPillView(obscuredByNotch: islandObscuredByNotch) {
                 expand(to: .expanded)
             }
-            .frame(width: pillWidth, height: 36)
+            .frame(width: shapeWidth, height: collapsedShapeHeight)
             .opacity(showContent ? 0 : 1)
             .allowsHitTesting(!showContent)
+            .zIndex(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
         .contentShape(Rectangle())
+        .onChange(of: expandedHeight) { _, _ in
+            if case .expanded = state {
+                cachedExpandedShapeHeight = max(collapsedShapeHeight + 1, expandedHeight)
+            }
+        }
+        .onChange(of: manager.activeSessions.count) { _, _ in
+            reportSize()
+        }
         .onChange(of: manager.visibleSessions.count) { oldCount, newCount in
-            withAnimation(.easeInOut(duration: 0.2)) { reportSize() }
+            reportSize()
             if autoHideWhenNoActiveSessions {
                 if newCount == 0 && oldCount > 0 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -123,12 +179,22 @@ struct NotchContentView: View {
             }
         }
         .onAppear {
+            if let w = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
+                islandObscuredByNotch = w.isObscuredByPhysicalNotch()
+            }
             reportSize()
             startHoverPolling()
         }
         .onChange(of: manager.hasInteraction) { _, hasInteraction in
             if hasInteraction {
-                autoExpandForInteraction()
+                if collapseAnimating {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        guard manager.hasInteraction else { return }
+                        autoExpandForInteraction()
+                    }
+                } else {
+                    autoExpandForInteraction()
+                }
             } else if case .permission = state {
                 collapse()
             } else if case .question = state {
@@ -143,6 +209,11 @@ struct NotchContentView: View {
         guard !expandPending else { return }
         expandPending = true
         let target = targetSize(for: newState)
+        if case .expanded = newState {
+            let count = manager.visibleSessions.count
+            let listH = min(CGFloat(count) * 120 + 50, 480)
+            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH
+        }
         onSizeChange?(target.width, target.height, true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             withAnimation(Self.expandSpring) {
@@ -158,18 +229,21 @@ struct NotchContentView: View {
 
     private func collapse() {
         lastCollapseAt = Date()
-        withAnimation(Self.contentFade) {
-            showContent = false
-        }
+        collapseAnimating = true
         withAnimation(Self.collapseSpring) {
+            showContent = false
             state = .collapsed
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            reportSize()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
+                window.resizeToFitCollapse(contentWidth: self.pillWidth, contentHeight: self.collapsedOuterHeight)
+            }
+            self.collapseAnimating = false
         }
     }
 
     private func reportSize() {
+        guard !collapseAnimating else { return }
         onSizeChange?(contentWidth, contentHeight, true)
     }
 
@@ -178,10 +252,13 @@ struct NotchContentView: View {
         let h: CGFloat
         switch state {
         case .collapsed:
-            w = 140; h = 48
+            w = pillWidth
+            h = collapsedOuterHeight
         case .expanded:
             let count = manager.visibleSessions.count
-            w = 420; h = min(CGFloat(count) * 120 + 50, 480) + 8
+            let listH = min(CGFloat(count) * 120 + 50, 480)
+            w = 420
+            h = Self.expandedPanelHeaderHeight + listH + 8
         case .permission:
             w = 440; h = expandedHeight + 8
         case .question(let id):
@@ -194,11 +271,25 @@ struct NotchContentView: View {
         return (w, h)
     }
 
+    /// Toolbar row in `expandedHeader` (~10+10 vertical padding + ~28 controls).
+    private static let expandedPanelHeaderHeight: CGFloat = 48
+    /// Spans slightly past the camera housing; kept compact (competitor-style bar).
+    private static let collapsedPillWidthNotched: CGFloat = 276
+    /// Bottom-only rounding when docked under the notch (top edge flush with screen).
+    private static let notchBarBottomCornerRadius: CGFloat = 17
+    private static let pillCornerRadiusExpanded: CGFloat = 22
+
     private var pillWidth: CGFloat {
-        let count = manager.visibleSessions.count
-        if isHovering && count > 0 { return min(CGFloat(count) * 90 + 80, 400) }
-        if count == 0 { return 140 }
-        return CGFloat(count) * 40 + 60
+        if islandObscuredByNotch {
+            return Self.collapsedPillWidthNotched
+        }
+        let n = manager.visibleSessions.count
+        if n == 0 { return 180 }
+        let icon: CGFloat = 22
+        let gap: CGFloat = 8
+        let horizontalPadding: CGFloat = 40
+        let w = horizontalPadding + CGFloat(n) * icon + CGFloat(max(0, n - 1)) * gap
+        return min(max(w, 160), 420)
     }
 
     @ViewBuilder
@@ -226,6 +317,7 @@ struct NotchContentView: View {
                     QuestionAnswerView(session: session) {
                         collapseAfterDelay()
                     }
+                    .id(session.pendingQuestion?.id)
                 }
 
             case .planReview(let id):
@@ -335,13 +427,19 @@ struct NotchContentView: View {
         guard let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow else { return }
         guard !window.isDragging else { return }
 
+        let obscured = window.isObscuredByPhysicalNotch()
+        if obscured != islandObscuredByNotch {
+            islandObscuredByNotch = obscured
+            reportSize()
+        }
+
         let mouse = NSEvent.mouseLocation
         var hitFrame = window.frame
         hitFrame.size.height += 2
         let inside = hitFrame.contains(mouse)
 
         if inside && !isExpanded {
-            guard Date().timeIntervalSince(lastCollapseAt) > 0.5 else { return }
+            guard Date().timeIntervalSince(lastCollapseAt) > 1.2 else { return }
             if let savedPos = jumpMouseLocation {
                 let dx = mouse.x - savedPos.x
                 let dy = mouse.y - savedPos.y

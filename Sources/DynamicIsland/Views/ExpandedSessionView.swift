@@ -50,7 +50,7 @@ struct ExpandedSessionView: View {
                 .foregroundStyle(.white.opacity(0.7))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.white.opacity(0.1))
+                .background(IslandStyle.insetFill)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)

@@ -48,7 +48,7 @@ struct PlanReviewView: View {
                     .padding(12)
             }
             .frame(maxHeight: 300)
-            .background(.black.opacity(0.3))
+            .background(IslandStyle.codeWell)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             if showFeedback {
@@ -57,7 +57,7 @@ struct PlanReviewView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.white)
                     .padding(8)
-                    .background(.white.opacity(0.06))
+                    .background(IslandStyle.insetFill)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .lineLimit(3)
             }

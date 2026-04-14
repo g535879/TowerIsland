@@ -84,7 +84,7 @@ struct MarkdownView: View {
                 .foregroundStyle(.green.opacity(0.8))
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.white.opacity(0.05))
+                .background(IslandStyle.codeWell)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
         case .listItem(let text):

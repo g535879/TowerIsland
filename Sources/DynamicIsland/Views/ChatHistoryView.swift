@@ -46,7 +46,7 @@ struct ChatHistoryView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(message.role == .user
                               ? session.agentType.color.opacity(0.1)
-                              : .white.opacity(0.04))
+                              : IslandStyle.insetFill)
                 )
                 .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         }

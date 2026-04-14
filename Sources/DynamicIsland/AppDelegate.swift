@@ -1,9 +1,14 @@
 import AppKit
+import Darwin
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) var shared: AppDelegate!
+    /// Set when this process lost the single-instance lock and is about to exit; skip normal startup.
+    private static var exitingAsDuplicateInstance = false
+    private static var singleInstanceLockFD: Int32 = -1
+
     let sessionManager = SessionManager()
     let audioEngine = AudioEngine()
     private var socketServer: SocketServer?
@@ -11,7 +16,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if !Self.acquireSingleInstanceLock() {
+            Self.exitingAsDuplicateInstance = true
+            Self.activateOtherInstancesOfThisApp()
+            NSApp.terminate(nil)
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !Self.exitingAsDuplicateInstance else { return }
         Self.shared = self
         NSApp.setActivationPolicy(.accessory)
 
@@ -47,14 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer?.stop()
     }
 
-    private static func hasNotch() -> Bool {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return false }
-        if #available(macOS 14.0, *) {
-            return screen.safeAreaInsets.top > 0
-        }
-        return false
-    }
-
     private func setupNotchWindow() {
         let window = NotchWindow()
         let hostView = FirstMouseHostingView(
@@ -70,14 +76,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hostView.sizingOptions = []
         }
         window.contentView?.addSubview(hostView)
-        if !Self.hasNotch() {
-            let screen = NotchWindow.bestScreen()
-            let w: CGFloat = 200
-            let h: CGFloat = 48
-            let x = screen.frame.origin.x + screen.frame.width - w - 20
-            let y = screen.frame.origin.y + screen.frame.height - h
-            window.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
-        }
         window.orderFrontRegardless()
         notchWindow = window
     }
@@ -171,6 +169,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    /// Returns false if another instance is already running (exclusive lock held).
+    private static func acquireSingleInstanceLock() -> Bool {
+        let dir = (NSHomeDirectory() as NSString).appendingPathComponent(".tower-island")
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let path = (dir as NSString).appendingPathComponent("instance.lock")
+        let fd = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else { return true }
+        if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            close(fd)
+            return false
+        }
+        singleInstanceLockFD = fd
+        return true
+    }
+
+    private static func activateOtherInstancesOfThisApp() {
+        guard let bid = Bundle.main.bundleIdentifier else { return }
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        for app in others {
+            app.activate(options: [.activateAllWindows])
+        }
     }
 }
 

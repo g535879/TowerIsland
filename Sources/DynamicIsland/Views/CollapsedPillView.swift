@@ -1,26 +1,111 @@
+import AppKit
 import SwiftUI
 
 struct CollapsedPillView: View {
     @Environment(SessionManager.self) private var manager
-    let isHovering: Bool
+    /// Obscured: left = expanded-list session that last received a message; right = active count.
+    /// Unobscured: same session count/order as the expanded list (`visibleSessions`).
+    let obscuredByNotch: Bool
     let onTap: () -> Void
 
     private var visible: [AgentSession] { manager.visibleSessions }
 
     var body: some View {
-        HStack(spacing: 8) {
-            if visible.isEmpty {
-                idleContent
-            } else if isHovering {
-                hoveredContent
+        Group {
+            if obscuredByNotch {
+                obscuredBarContent
             } else {
-                compactContent
+                unobscuredCenteredIcons
             }
         }
-        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
+    }
+
+    private var obscuredBarContent: some View {
+        HStack(spacing: 0) {
+            obscuredLeadingIcon
+            Spacer(minLength: 6)
+            activeCountLabel
+        }
+        .padding(.horizontal, 10)
+    }
+
+    private var unobscuredCenteredIcons: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if visible.isEmpty {
+                idleContent
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(visible) { session in
+                        AgentIcon(agentType: session.agentType, size: 22, status: session.status)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private var needsAttention: Bool {
+        visible.contains { $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview }
+    }
+
+    @ViewBuilder
+    private var obscuredLeadingIcon: some View {
+        if let session = manager.latestMessagedVisibleSession {
+            ZStack(alignment: .topTrailing) {
+                AgentIcon(agentType: session.agentType, size: 20, status: session.status)
+                if needsAttention {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                        .offset(x: 4, y: -2)
+                }
+            }
+            .accessibilityLabel("Session that last received a message")
+        } else {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let img = NSImage(named: NSImage.applicationIconName) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 20, height: 20)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    } else {
+                        Image(systemName: "sparkles.rectangle.stack.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.green.opacity(0.85))
+                            .frame(width: 20, height: 20)
+                    }
+                }
+                if needsAttention {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                        .offset(x: 2, y: -1)
+                }
+            }
+            .accessibilityLabel("Tower Island")
+        }
+    }
+
+    private var activeCountLabel: some View {
+        let n = manager.activeSessions.count
+        return HStack(spacing: 3) {
+            Text("\(n)")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.92))
+                .monospacedDigit()
+            Text("active")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.38))
+        }
+        .accessibilityLabel("\(n) active agents")
     }
 
     private var idleContent: some View {
@@ -32,66 +117,5 @@ struct CollapsedPillView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.6))
         }
-    }
-
-    private var compactContent: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(visible.prefix(4))) { session in
-                PillBadge(session: session, compact: true)
-            }
-            if visible.count > 4 {
-                Text("+\(visible.count - 4)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-
-            if let interacting = visible.first(where: { $0.status == .waitingPermission }) {
-                Spacer()
-                interactionBadge(for: interacting)
-            }
-        }
-    }
-
-    private var hoveredContent: some View {
-        HStack(spacing: 8) {
-            ForEach(Array(visible.prefix(4))) { session in
-                HStack(spacing: 4) {
-                    AgentIcon(agentType: session.agentType, size: 14, status: session.status)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(session.agentType.shortName)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text(idleOrDone(session) ? (session.statusText.isEmpty ? "Done" : String(session.statusText.prefix(40))) : session.lastActivity)
-                            .font(.system(size: 8))
-                            .foregroundStyle(idleOrDone(session) ? .green.opacity(0.6) : .white.opacity(0.4))
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(idleOrDone(session)
-                    ? .green.opacity(0.08)
-                    : session.agentType.color.opacity(0.15))
-                .clipShape(Capsule())
-            }
-        }
-    }
-
-    private func idleOrDone(_ session: AgentSession) -> Bool {
-        session.status == .idle || session.status == .completed
-    }
-
-    private func interactionBadge(for session: AgentSession) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 10))
-            Text("Action")
-                .font(.system(size: 9, weight: .bold))
-        }
-        .foregroundStyle(.orange)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(.orange.opacity(0.2))
-        .clipShape(Capsule())
     }
 }

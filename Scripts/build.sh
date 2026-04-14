@@ -45,6 +45,8 @@ fi
 
 cp "$BUILD_DIR/release/TowerIsland" "$APP_BUNDLE/Contents/MacOS/TowerIsland"
 cp "$BUILD_DIR/release/DIBridge" "$APP_BUNDLE/Contents/MacOS/di-bridge"
+codesign -s - -f "$APP_BUNDLE/Contents/MacOS/di-bridge" 2>/dev/null || true
+codesign -s - -f "$APP_BUNDLE/Contents/MacOS/TowerIsland" 2>/dev/null || true
 
 cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -67,6 +69,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
@@ -93,6 +97,7 @@ echo "==> Installing bridge binary..."
 mkdir -p "$BRIDGE_INSTALL_DIR"
 cp "$BUILD_DIR/release/DIBridge" "$BRIDGE_INSTALL_DIR/di-bridge"
 chmod +x "$BRIDGE_INSTALL_DIR/di-bridge"
+codesign -s - -f "$BRIDGE_INSTALL_DIR/di-bridge" 2>/dev/null || true
 
 echo ""
 echo "Build complete!"

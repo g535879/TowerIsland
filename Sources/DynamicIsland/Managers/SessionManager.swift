@@ -15,6 +15,17 @@ final class SessionManager {
     private var cleanupTimer: Timer?
     private var workspaceObserver: Any?
 
+    /// Caches the last answer per session so that duplicate follow-up events from
+    /// agents like OpenCode (same question, same options, fired within 2 seconds)
+    /// are auto-replied without re-showing the question panel.
+    private struct RecentAnswer {
+        let answer: String
+        let questionText: String
+        let options: Set<String>
+        let timestamp: Date
+    }
+    private var recentAnswers: [String: RecentAnswer] = [:]
+
     static let idleTimeout: TimeInterval = 120
 
     var completedLingerDuration: TimeInterval {
@@ -25,6 +36,11 @@ final class SessionManager {
 
     var activeSessions: [AgentSession] {
         sessions.filter { $0.status != .completed }
+    }
+
+    /// Among sessions shown in the expanded list (`visibleSessions`), the one that most recently received a message/activity (notch-obscured island leading icon).
+    var latestMessagedVisibleSession: AgentSession? {
+        visibleSessions.max(by: { $0.lastActivityTime < $1.lastActivityTime })
     }
 
     /// Active sessions + recently completed sessions that should still be visible in the pill.
@@ -188,15 +204,42 @@ final class SessionManager {
         audioEngine?.play(.permissionRequest)
     }
 
-    func handleQuestionRequest(_ message: DIMessage, respond: @escaping @Sendable (String) -> Void) {
+    func handleQuestionRequest(_ message: DIMessage, respond: @escaping @Sendable (String) -> Void, cancel: (@Sendable () -> Void)? = nil) {
         let realAgent = AgentType.from(message.agentType) ?? .claudeCode
+        let text = message.questionText ?? ""
+        let options = message.options ?? []
+        // Skip stub events (e.g. OpenCode fires a placeholder "Question" with no options
+        // before the real question arrives). Close the fd so the di-bridge exits cleanly.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty && !(trimmed == "Question" && options.isEmpty) else {
+            cancel?()
+            return
+        }
         let session = findOrCreateSessionForInteraction(message)
+
+        // Deduplicate: if this session was answered recently (within 2s) and the
+        // incoming question text matches (exact or contains — handles [N/M] prefix
+        // variations from sequential flows), auto-reply with the cached answer so the
+        // sequential flow can advance to the next question.
+        if let recent = recentAnswers[session.id],
+           !options.isEmpty,
+           Date().timeIntervalSince(recent.timestamp) < 2.0,
+           (trimmed == recent.questionText
+            || trimmed.contains(recent.questionText)
+            || recent.questionText.contains(trimmed)) {
+            respond(recent.answer)
+            return
+        }
+
+        // Close the previous question's fd when superseded by a newer event.
+        session.pendingQuestion?.cancel?()
         session.status = .waitingAnswer
         session.pendingQuestion = PendingQuestion(
             requestingAgent: realAgent,
-            text: message.questionText ?? "",
-            options: message.options ?? [],
-            respond: respond
+            text: text,
+            options: options,
+            respond: respond,
+            cancel: cancel
         )
         selectedSessionId = session.id
         audioEngine?.play(.question)
@@ -230,6 +273,15 @@ final class SessionManager {
     }
 
     func answerQuestion(session: AgentSession, answer: String) {
+        // Cache for deduplication of follow-up duplicate events.
+        if let pq = session.pendingQuestion {
+            recentAnswers[session.id] = RecentAnswer(
+                answer: answer,
+                questionText: pq.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                options: Set(pq.options),
+                timestamp: Date()
+            )
+        }
         session.pendingQuestion?.respond(answer)
         session.pendingQuestion = nil
         session.status = .active

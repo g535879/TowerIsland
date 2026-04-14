@@ -1,18 +1,6 @@
 import Foundation
 import DIShared
 
-private func diLog(_ msg: String) {
-    let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(msg)\n"
-    let logPath = DISocketConfig.socketDir + "/debug.log"
-    if let handle = FileHandle(forWritingAtPath: logPath) {
-        handle.seekToEndOfFile()
-        handle.write(line.data(using: .utf8)!)
-        handle.closeFile()
-    } else {
-        FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-    }
-}
-
 final class SocketServer: @unchecked Sendable {
     private let sessionManager: SessionManager
     private var serverFD: Int32 = -1
@@ -30,7 +18,6 @@ final class SocketServer: @unchecked Sendable {
 
         serverFD = socket(AF_UNIX, SOCK_STREAM, 0)
         guard serverFD >= 0 else {
-            print("[SocketServer] Failed to create socket: \(errno)")
             return
         }
 
@@ -51,19 +38,16 @@ final class SocketServer: @unchecked Sendable {
             }
         }
         guard bindResult == 0 else {
-            print("[SocketServer] Bind failed: \(errno)")
             close(serverFD)
             return
         }
 
         guard listen(serverFD, 16) == 0 else {
-            print("[SocketServer] Listen failed: \(errno)")
             close(serverFD)
             return
         }
 
         isRunning = true
-        diLog("[SocketServer] Listening on \(DISocketConfig.socketPath)")
 
         queue.async { [weak self] in
             self?.acceptLoop()
@@ -83,7 +67,6 @@ final class SocketServer: @unchecked Sendable {
         while isRunning {
             let clientFD = accept(serverFD, nil, nil)
             guard clientFD >= 0 else {
-                if isRunning { diLog("[SocketServer] Accept error: \(errno)") }
                 continue
             }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -94,21 +77,14 @@ final class SocketServer: @unchecked Sendable {
 
     private func handleClient(_ fd: Int32) {
         guard let data = readAll(fd), !data.isEmpty else {
-            diLog("[SocketServer] No data from client")
             close(fd)
             return
         }
-
-        diLog("[SocketServer] Received \(data.count) bytes")
 
         guard let message = try? DIProtocol.decode(data) else {
-            diLog("[SocketServer] Failed to decode: \(String(data: data.prefix(200), encoding: .utf8) ?? "?")")
             close(fd)
             return
         }
-
-        let statusPreview = (message.status ?? "nil").prefix(100)
-        diLog("[SocketServer] Message: type=\(message.type.rawValue) session=\(message.sessionId) agent=\(message.agentType ?? "nil") tool=\(message.tool ?? "nil") desc=\(message.permDescription ?? "nil") question=\(message.questionText ?? "nil") options=\(message.options?.joined(separator: ",") ?? "nil") status=\(statusPreview)")
 
         switch message.type {
         case .permissionRequest:
@@ -120,9 +96,13 @@ final class SocketServer: @unchecked Sendable {
 
         case .question:
             Task { @MainActor in
-                self.sessionManager.handleQuestionRequest(message) { [weak self] answer in
-                    self?.sendQuestionResponse(fd: fd, answer: answer, sessionId: message.sessionId)
-                }
+                self.sessionManager.handleQuestionRequest(
+                    message,
+                    respond: { [weak self] answer in
+                        self?.sendQuestionResponse(fd: fd, answer: answer, sessionId: message.sessionId)
+                    },
+                    cancel: { close(fd) }
+                )
             }
 
         case .planReview:
@@ -135,21 +115,18 @@ final class SocketServer: @unchecked Sendable {
         default:
             Task { @MainActor in
                 self.sessionManager.handleMessage(message)
-                diLog("[SocketServer] Sessions count: \(self.sessionManager.sessions.count)")
             }
             close(fd)
         }
     }
 
     private func sendResponse(fd: Int32, approved: Bool, sessionId: String) {
-        diLog("[SocketServer] Sending permission response: approved=\(approved) fd=\(fd) session=\(sessionId)")
         var msg = DIMessage(type: .permissionResponse, sessionId: sessionId)
         msg.approved = approved
         writeAndClose(fd: fd, message: msg)
     }
 
     private func sendQuestionResponse(fd: Int32, answer: String, sessionId: String) {
-        diLog("[SocketServer] Sending question response: answer=\(answer) fd=\(fd) session=\(sessionId)")
         var msg = DIMessage(type: .questionResponse, sessionId: sessionId)
         msg.answer = answer
         writeAndClose(fd: fd, message: msg)
@@ -164,15 +141,13 @@ final class SocketServer: @unchecked Sendable {
 
     private func writeAndClose(fd: Int32, message: DIMessage) {
         guard let data = try? DIProtocol.encode(message) else {
-            diLog("[SocketServer] Failed to encode response for fd=\(fd)")
             close(fd)
             return
         }
-        let sent = data.withUnsafeBytes { ptr -> Int in
+        _ = data.withUnsafeBytes { ptr -> Int in
             guard let base = ptr.baseAddress else { return -1 }
             return send(fd, base, ptr.count, 0)
         }
-        diLog("[SocketServer] Wrote \(sent) bytes to fd=\(fd) type=\(message.type.rawValue)")
         close(fd)
     }
 

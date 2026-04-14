@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 
 final class NotchWindow: NSPanel {
     static let maxExpandedWidth: CGFloat = 520
@@ -7,13 +8,23 @@ final class NotchWindow: NSPanel {
 
     private static let collapsedPadding: CGFloat = 8
 
-    static var notchInset: CGFloat {
-        let screen = bestScreen()
-        if #available(macOS 14.0, *), screen.safeAreaInsets.top > 0 {
-            return screen.safeAreaInsets.top
+    static func islandTopOffset(for _: NSScreen) -> CGFloat { 0 }
+
+    /// True when the island sits in the built-in display’s top-center notch band (camera housing occludes content).
+    func isObscuredByPhysicalNotch() -> Bool {
+        guard let screen = self.screen else { return false }
+        if #available(macOS 14.0, *) {
+            guard screen.safeAreaInsets.top > 0 else { return false }
+        } else {
+            return false
         }
-        return 0
+        let sf = screen.frame
+        let wf = frame
+        let topAligned = abs(wf.maxY - sf.maxY) < 4
+        let inCenterBand = abs(wf.midX - sf.midX) < sf.width * 0.22
+        return topAligned && inCenterBand
     }
+
     var customX: CGFloat?
     private(set) var isDragging = false
     private var dragTracking = false
@@ -25,7 +36,7 @@ final class NotchWindow: NSPanel {
         let width: CGFloat = 220
         let height: CGFloat = 50
         let x = screen.frame.origin.x + (screen.frame.width - width) / 2
-        let y = screen.frame.origin.y + screen.frame.height - Self.notchInset - height
+        let y = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - height
 
         super.init(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
@@ -121,8 +132,41 @@ final class NotchWindow: NSPanel {
         } else {
             x = screen.frame.origin.x + (screen.frame.width - w) / 2
         }
-        let screenTop = screen.frame.origin.y + screen.frame.height - Self.notchInset
-        setFrameDirect(NSRect(x: x, y: screenTop - h, width: w, height: h), display: display)
+        let screenTop = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen)
+        let yComputed = screenTop - h
+        let rect = NSRect(x: x, y: yComputed, width: w, height: h)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        setFrameDirect(rect, display: display)
+        NSAnimationContext.endGrouping()
+    }
+
+    func resizeToFitCollapse(contentWidth: CGFloat, contentHeight: CGFloat) {
+        let screen = Self.bestScreen()
+        let targetW = contentWidth + Self.collapsedPadding * 2
+        let targetH = contentHeight + Self.collapsedPadding
+        let targetX: CGFloat
+        if let cx = customX {
+            targetX = max(screen.frame.origin.x,
+                          min(cx - targetW / 2, screen.frame.origin.x + screen.frame.width - targetW))
+        } else {
+            targetX = screen.frame.origin.x + (screen.frame.width - targetW) / 2
+        }
+        let screenTop = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen)
+        let targetY = screenTop - targetH
+
+        isDragging = false
+        dragTracking = false
+
+        let target = NSRect(x: targetX, y: targetY, width: targetW, height: targetH)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        setFrameDirect(target, display: true)
+        NSAnimationContext.endGrouping()
+        CATransaction.commit()
     }
 
     static func bestScreen() -> NSScreen {
@@ -161,7 +205,7 @@ final class NotchWindow: NSPanel {
                 let newX = max(screen.frame.origin.x,
                                min(dragStartWindowX + dx,
                                    screen.frame.origin.x + screen.frame.width - frame.width))
-                let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frame.height
+                let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - frame.height
                 setFrameDirect(NSRect(x: newX, y: topY, width: frame.width, height: frame.height))
             } else {
                 super.sendEvent(event)
@@ -187,7 +231,7 @@ final class NotchWindow: NSPanel {
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - frameRect.height
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
@@ -204,7 +248,7 @@ final class NotchWindow: NSPanel {
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - Self.notchInset - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - frameRect.height
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x

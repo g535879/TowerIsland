@@ -75,10 +75,13 @@ struct SessionCardView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.white.opacity(isHovered ? 0.10 : 0.04))
+                    .fill(isHovered ? IslandStyle.cardHover : IslandStyle.cardRest)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(.white.opacity(isHovered ? 0.15 : 0.06), lineWidth: 0.5)
+                            .strokeBorder(
+                                .white.opacity(isHovered ? IslandStyle.cardStrokeHover : IslandStyle.cardStrokeRest),
+                                lineWidth: 0.5
+                            )
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

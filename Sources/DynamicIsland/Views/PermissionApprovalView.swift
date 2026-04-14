@@ -75,7 +75,7 @@ struct PermissionApprovalView: View {
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white.opacity(0.06))
+                    .background(IslandStyle.insetFill)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if let path = perm.filePath, !path.isEmpty {
@@ -95,7 +95,7 @@ struct PermissionApprovalView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.white.opacity(0.06))
+                .background(IslandStyle.insetFill)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
@@ -158,7 +158,7 @@ struct PermissionApprovalView: View {
             }
         }
         .frame(maxHeight: 120)
-        .background(.black.opacity(0.3))
+        .background(IslandStyle.codeWell)
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 

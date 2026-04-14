@@ -4,31 +4,42 @@ struct QuestionAnswerView: View {
     let session: AgentSession
     let onComplete: () -> Void
     @Environment(SessionManager.self) private var manager
+    /// Snapshot captured at init time; persists after `pendingQuestion` is cleared on answer,
+    /// keeping the layout stable throughout the collapse animation.
+    @State private var frozenQuestion: PendingQuestion?
+    @State private var submittedAnswer: String? = nil
+
+    init(session: AgentSession, onComplete: @escaping () -> Void) {
+        self.session = session
+        self.onComplete = onComplete
+        _frozenQuestion = State(initialValue: session.pendingQuestion)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().background(.white.opacity(0.08))
 
-            if let q = session.pendingQuestion {
-                questionContent(q)
+            if let q = frozenQuestion {
+                // Render from snapshot; updated live until an answer is submitted
+                // (prevents layout freeze on OpenCode's streaming question updates).
+                questionContent(q, selectedAnswer: submittedAnswer)
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.green.opacity(0.6))
-                    Text("Question was handled externally")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.4))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear { onComplete() }
+                // Question was handled externally before this view mounted.
+                Color.clear.frame(height: 1).onAppear { onComplete() }
             }
+        }
+        // Keep frozenQuestion in sync until user submits (handles agents like OpenCode that
+        // fire multiple question.asked events as the question is streamed/updated).
+        // Once submittedAnswer is set the snapshot is locked — preventing height jump on answer.
+        .onChange(of: session.pendingQuestion?.id) { _, _ in
+            guard submittedAnswer == nil, let newQ = session.pendingQuestion else { return }
+            frozenQuestion = newQ
         }
     }
 
     private var displayAgent: AgentType {
-        session.pendingQuestion?.requestingAgent ?? session.agentType
+        frozenQuestion?.requestingAgent ?? session.agentType
     }
 
     private var header: some View {
@@ -50,7 +61,7 @@ struct QuestionAnswerView: View {
         .padding(.vertical, 10)
     }
 
-    private func questionContent(_ q: PendingQuestion) -> some View {
+    private func questionContent(_ q: PendingQuestion, selectedAnswer: String?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "questionmark.circle.fill")
@@ -64,31 +75,45 @@ struct QuestionAnswerView: View {
 
             VStack(spacing: 6) {
                 ForEach(Array(q.options.enumerated()), id: \.offset) { index, option in
+                    let isSelected = selectedAnswer == option
                     Button {
+                        guard submittedAnswer == nil else { return }
+                        submittedAnswer = option
                         manager.answerQuestion(session: session, answer: option)
                         onComplete()
                     } label: {
                         HStack {
-                            Text("⌘\(index + 1)")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.3))
-                                .frame(width: 24)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.green.opacity(0.9))
+                                    .frame(width: 24)
+                            } else {
+                                Text("⌘\(index + 1)")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(submittedAnswer == nil ? 0.3 : 0.15))
+                                    .frame(width: 24)
+                            }
                             Text(option)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(isSelected ? .white : .white.opacity(submittedAnswer == nil ? 1 : 0.3))
                             Spacer()
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(.white.opacity(0.06))
+                        .background(isSelected ? Color.green.opacity(0.12) : IslandStyle.insetFill)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay {
                             RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                                .strokeBorder(
+                                    isSelected ? Color.green.opacity(0.3) : Color.white.opacity(0.08),
+                                    lineWidth: 0.5
+                                )
                         }
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                    .disabled(submittedAnswer != nil)
                 }
             }
         }
