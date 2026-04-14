@@ -458,11 +458,6 @@ final class SessionManager {
         } else if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
             session.status = .error
             audioEngine?.play(.error)
-        } else if !text.isEmpty && !session.agentType.sendsSessionEnd && !text.hasPrefix("{") {
-            if session.status != .completed && session.status != .idle {
-                markCompleted(session)
-                audioEngine?.play(.sessionEnd)
-            }
         }
         updateTokenUsage(session: session, message: message)
     }
