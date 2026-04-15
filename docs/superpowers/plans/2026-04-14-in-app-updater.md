@@ -35,7 +35,7 @@
 - Create: `Sources/DynamicIsland/Managers/UpdateManager.swift`
 - Test: `Tests/TowerIslandTests/UpdateManagerTests.swift`
 
-- [ ] **Step 1: Write the failing tests for version parsing and comparison**
+- [x] **Step 1: Write the failing tests for version parsing and comparison**
 
 ```swift
 import XCTest
@@ -55,12 +55,12 @@ final class UpdateManagerTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: FAIL with missing `UpdateManager` type or missing static methods.
 
-- [ ] **Step 3: Write the minimal `UpdateManager` foundation**
+- [x] **Step 3: Write the minimal `UpdateManager` foundation**
 
 ```swift
 import Foundation
@@ -106,12 +106,12 @@ final class UpdateManager {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: PASS for both version tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/UpdateManager.swift Tests/TowerIslandTests/UpdateManagerTests.swift
@@ -124,7 +124,7 @@ git commit -m "Add updater version parsing foundation"
 - Modify: `Sources/DynamicIsland/Managers/UpdateManager.swift`
 - Modify: `Tests/TowerIslandTests/UpdateManagerTests.swift`
 
-- [ ] **Step 1: Write the failing test for release metadata parsing**
+- [x] **Step 1: Write the failing test for release metadata parsing**
 
 ```swift
 func testParsesGitHubReleasePayload() throws {
@@ -137,12 +137,12 @@ func testParsesGitHubReleasePayload() throws {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter UpdateManagerTests/testParsesGitHubReleasePayload`
 Expected: FAIL with missing decode API or release model.
 
-- [ ] **Step 3: Extend `UpdateManager` with release model and decoder**
+- [x] **Step 3: Extend `UpdateManager` with release model and decoder**
 
 ```swift
 extension UpdateManager {
@@ -171,7 +171,7 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 4: Add a lightweight check result API**
+- [x] **Step 4: Add a lightweight check result API**
 
 ```swift
 extension UpdateManager {
@@ -193,12 +193,12 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: PASS for version and decode tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/UpdateManager.swift Tests/TowerIslandTests/UpdateManagerTests.swift
@@ -211,7 +211,7 @@ git commit -m "Add updater release parsing"
 - Modify: `Sources/DynamicIsland/Managers/UpdateManager.swift`
 - Modify: `Tests/TowerIslandTests/UpdateManagerTests.swift`
 
-- [ ] **Step 1: Write the failing test for state transition on check success**
+- [x] **Step 1: Write the failing test for state transition on check success**
 
 ```swift
 @MainActor
@@ -231,12 +231,12 @@ func testApplyCheckResultTransitionsToUpdateAvailable() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails if state wiring is incomplete**
+- [x] **Step 2: Run test to verify it fails if state wiring is incomplete**
 
 Run: `swift test --filter UpdateManagerTests/testApplyCheckResultTransitionsToUpdateAvailable`
 Expected: FAIL if `State` equality or stored properties are incomplete.
 
-- [ ] **Step 3: Add a release fetch API with injectable networking**
+- [x] **Step 3: Add a release fetch API with injectable networking**
 
 ```swift
 extension UpdateManager {
@@ -258,7 +258,7 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 4: Add `checkForUpdates()` and state/error mapping**
+- [x] **Step 4: Add `checkForUpdates()` and state/error mapping**
 
 ```swift
 extension UpdateManager {
@@ -280,12 +280,12 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: PASS with state-transition coverage.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/UpdateManager.swift Tests/TowerIslandTests/UpdateManagerTests.swift
@@ -298,7 +298,7 @@ git commit -m "Add manual update check flow"
 - Create: `Sources/DynamicIsland/Managers/AppUpdater.swift`
 - Create: `Tests/TowerIslandTests/AppUpdaterTests.swift`
 
-- [ ] **Step 1: Write the failing test for tag normalization into a DMG download URL context**
+- [x] **Step 1: Write the failing test for tag normalization into a DMG download URL context**
 
 ```swift
 import XCTest
@@ -311,12 +311,12 @@ final class AppUpdaterTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter AppUpdaterTests`
 Expected: FAIL with missing `AppUpdater`.
 
-- [ ] **Step 3: Create minimal `AppUpdater` type**
+- [x] **Step 3: Create minimal `AppUpdater` type**
 
 ```swift
 import Foundation
@@ -353,12 +353,12 @@ struct AppUpdater {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter AppUpdaterTests`
 Expected: PASS for the filename test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/AppUpdater.swift Tests/TowerIslandTests/AppUpdaterTests.swift
@@ -371,7 +371,7 @@ git commit -m "Add app updater stage model"
 - Modify: `Sources/DynamicIsland/Managers/AppUpdater.swift`
 - Modify: `Tests/TowerIslandTests/AppUpdaterTests.swift`
 
-- [ ] **Step 1: Write the failing test for mount output parsing**
+- [x] **Step 1: Write the failing test for mount output parsing**
 
 ```swift
 func testExtractsMountDirectoryFromHdiutilOutput() {
@@ -381,12 +381,12 @@ func testExtractsMountDirectoryFromHdiutilOutput() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter AppUpdaterTests/testExtractsMountDirectoryFromHdiutilOutput`
 Expected: FAIL with missing helper.
 
-- [ ] **Step 3: Add install helpers with injectable side effects**
+- [x] **Step 3: Add install helpers with injectable side effects**
 
 ```swift
 struct AppUpdater {
@@ -419,7 +419,7 @@ struct AppUpdater {
 }
 ```
 
-- [ ] **Step 4: Add `install(version:releaseURL:appPath:onStage:)` skeleton**
+- [x] **Step 4: Add `install(version:releaseURL:appPath:onStage:)` skeleton**
 
 ```swift
 extension AppUpdater {
@@ -432,12 +432,12 @@ extension AppUpdater {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `swift test --filter AppUpdaterTests`
 Expected: PASS for parsing helpers and stage-model tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/AppUpdater.swift Tests/TowerIslandTests/AppUpdaterTests.swift
@@ -450,7 +450,7 @@ git commit -m "Add app updater install helpers"
 - Modify: `Sources/DynamicIsland/Managers/UpdateManager.swift`
 - Modify: `Tests/TowerIslandTests/UpdateManagerTests.swift`
 
-- [ ] **Step 1: Write the failing test for install state progression**
+- [x] **Step 1: Write the failing test for install state progression**
 
 ```swift
 @MainActor
@@ -464,12 +464,12 @@ func testInstallUpdateMapsUpdaterStagesIntoManagerState() async throws {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter UpdateManagerTests/testInstallUpdateMapsUpdaterStagesIntoManagerState`
 Expected: FAIL with missing updater injection or install API.
 
-- [ ] **Step 3: Add updater injection to `UpdateManager`**
+- [x] **Step 3: Add updater injection to `UpdateManager`**
 
 ```swift
 extension UpdateManager {
@@ -490,7 +490,7 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 4: Add `installUpdate()` and stage mapping**
+- [x] **Step 4: Add `installUpdate()` and stage mapping**
 
 ```swift
 extension UpdateManager {
@@ -517,12 +517,12 @@ extension UpdateManager {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: PASS for install state mapping.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Managers/UpdateManager.swift Tests/TowerIslandTests/UpdateManagerTests.swift
@@ -534,7 +534,7 @@ git commit -m "Connect update manager to app updater"
 **Files:**
 - Modify: `Sources/DynamicIsland/Views/PreferencesView.swift`
 
-- [ ] **Step 1: Add the failing UI expectation in code comments via a temporary preview-driven checklist**
+- [x] **Step 1: Add the failing UI expectation in code comments via a temporary preview-driven checklist**
 
 ```swift
 // Expected UI:
@@ -545,14 +545,14 @@ git commit -m "Connect update manager to app updater"
 // - Inline error or progress state
 ```
 
-- [ ] **Step 2: Add `UpdateManager` to `PreferencesView` environment**
+- [x] **Step 2: Add `UpdateManager` to `PreferencesView` environment**
 
 ```swift
 @Environment(UpdateManager.self) private var updateManager
 @State private var showUpdateConfirmation = false
 ```
 
-- [ ] **Step 3: Add an Updates section near the About area**
+- [x] **Step 3: Add an Updates section near the About area**
 
 ```swift
 SectionCard(title: "Updates", systemImage: "arrow.triangle.2.circlepath") {
@@ -586,7 +586,7 @@ SectionCard(title: "Updates", systemImage: "arrow.triangle.2.circlepath") {
 }
 ```
 
-- [ ] **Step 4: Add confirmation dialog**
+- [x] **Step 4: Add confirmation dialog**
 
 ```swift
 .confirmationDialog(
@@ -609,12 +609,12 @@ SectionCard(title: "Updates", systemImage: "arrow.triangle.2.circlepath") {
 }
 ```
 
-- [ ] **Step 5: Run a focused build verification**
+- [x] **Step 5: Run a focused build verification**
 
 Run: `swift build`
 Expected: PASS with the new Settings section compiling.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/Views/PreferencesView.swift
@@ -626,13 +626,13 @@ git commit -m "Add settings update UI"
 **Files:**
 - Modify: `Sources/DynamicIsland/AppDelegate.swift`
 
-- [ ] **Step 1: Update app setup to create and inject `UpdateManager`**
+- [x] **Step 1: Update app setup to create and inject `UpdateManager`**
 
 ```swift
 let updateManager = UpdateManager()
 ```
 
-- [ ] **Step 2: Pass `updateManager` into `PreferencesView`**
+- [x] **Step 2: Pass `updateManager` into `PreferencesView`**
 
 ```swift
 rootView: PreferencesView()
@@ -641,7 +641,7 @@ rootView: PreferencesView()
     .environment(updateManager)
 ```
 
-- [ ] **Step 3: Reflect update availability in the status item**
+- [x] **Step 3: Reflect update availability in the status item**
 
 ```swift
 private func refreshStatusItemAppearance() {
@@ -655,7 +655,7 @@ private func refreshStatusItemAppearance() {
 }
 ```
 
-- [ ] **Step 4: Trigger refresh after update checks and on launch**
+- [x] **Step 4: Trigger refresh after update checks and on launch**
 
 ```swift
 Task { @MainActor in
@@ -664,12 +664,12 @@ Task { @MainActor in
 }
 ```
 
-- [ ] **Step 5: Run build verification**
+- [x] **Step 5: Run build verification**
 
 Run: `swift build`
 Expected: PASS and status item still compiles.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/DynamicIsland/AppDelegate.swift
@@ -681,27 +681,27 @@ git commit -m "Show update availability in menu bar"
 **Files:**
 - Verify only
 
-- [ ] **Step 1: Run all focused updater tests**
+- [x] **Step 1: Run all focused updater tests**
 
 Run: `swift test --filter UpdateManagerTests`
 Expected: PASS
 
-- [ ] **Step 2: Run app updater tests**
+- [x] **Step 2: Run app updater tests**
 
 Run: `swift test --filter AppUpdaterTests`
 Expected: PASS
 
-- [ ] **Step 3: Run the full test suite**
+- [x] **Step 3: Run the full test suite**
 
 Run: `swift test`
 Expected: PASS with 0 failures.
 
-- [ ] **Step 4: Run a full build**
+- [x] **Step 4: Run a full build**
 
 Run: `swift build`
 Expected: PASS.
 
-- [ ] **Step 5: Perform manual UI smoke check**
+- [x] **Step 5: Perform manual UI smoke check**
 
 Run:
 
@@ -716,7 +716,7 @@ Expected:
 - Confirmation dialog appears before install
 - Menu bar icon changes when update is available
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
