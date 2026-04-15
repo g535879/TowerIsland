@@ -62,10 +62,7 @@ struct NotchContentView: View {
         case .permission(let id):
             return permissionExpandedTotalHeight(sessionId: id)
         case .question(let id):
-            let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 0
-            let baseHeight: CGFloat = 120
-            let optionHeight: CGFloat = CGFloat(max(optionCount, 2)) * 42
-            return min(baseHeight + optionHeight, 480)
+            return questionExpandedTotalHeight(sessionId: id)
         case .planReview: return 480
         }
     }
@@ -88,6 +85,14 @@ struct NotchContentView: View {
     private func permissionExpandedTotalHeight(sessionId: String) -> CGFloat {
         let inner = permissionCardInnerHeight(sessionId: sessionId)
         return inner + Self.expandedPanelHeaderHeight + Self.expandedPanelBottomInset
+    }
+
+    /// Full expanded height for question mode: island toolbar + question card + bottom inset.
+    private func questionExpandedTotalHeight(sessionId: String) -> CGFloat {
+        let optionCount = manager.sessions.first(where: { $0.id == sessionId })?.pendingQuestion?.options.count ?? 0
+        let questionInnerHeight: CGFloat = min(120 + CGFloat(max(optionCount, 2)) * 42, 480)
+        let total = questionInnerHeight + Self.expandedPanelHeaderHeight + Self.expandedPanelBottomInset
+        return min(total, 480)
     }
 
     private var shapeWidth: CGFloat {
@@ -289,9 +294,8 @@ struct NotchContentView: View {
             w = 440
             h = permissionExpandedTotalHeight(sessionId: id) + 8
         case .question(let id):
-            let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 4
-            let contentH: CGFloat = 120 + CGFloat(max(optionCount, 2)) * 42
-            w = 440; h = min(contentH, 480) + 8
+            w = 440
+            h = questionExpandedTotalHeight(sessionId: id) + 8
         case .planReview:
             w = 500; h = 480 + 8
         }
