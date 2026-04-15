@@ -283,8 +283,19 @@ enum ZeroConfigManager {
         let hooksPath = "\(configDir)/hooks.json"
         ensureDir(configDir)
 
-        var config = readJSON(hooksPath) ?? [String: Any]()
+        let config = readJSON(hooksPath) ?? [String: Any]()
+        let updatedConfig = sanitizeCursorConfig(config, bridgePath: bridgePath)
+        writeJSON(hooksPath, updatedConfig)
+    }
+
+    static func sanitizeCursorConfig(_ config: [String: Any], bridgePath: String) -> [String: Any] {
+        var config = config
         var hooks = config["hooks"] as? [String: Any] ?? [:]
+
+        if let dynamicIslandCommand = config["dynamic_island"] as? String,
+           isLegacyCursorHookCommand(dynamicIslandCommand) {
+            config.removeValue(forKey: "dynamic_island")
+        }
 
         let hookMapping: [(String, String)] = [
             ("beforeSubmitPrompt", "--hook session_start"),
@@ -301,24 +312,26 @@ enum ZeroConfigManager {
 
         for (event, hookArgs) in hookMapping {
             var entries = hooks[event] as? [[String: Any]] ?? []
-            entries.removeAll { ($0["command"] as? String)?.contains("di-bridge") == true }
+            entries.removeAll { isLegacyCursorHookCommand($0["command"] as? String) }
             entries.append(["command": "\(bridgePath) --agent cursor \(hookArgs)"])
             hooks[event] = entries
         }
 
         if let oldEntries = hooks["preToolUse"] as? [[String: Any]] {
             let cleaned = oldEntries.filter {
-                !( ($0["command"] as? String)?.contains("di-bridge") == true
-                   && $0["matcher"] != nil )
+                !isLegacyCursorHookCommand($0["command"] as? String)
             }
-            if cleaned.count != oldEntries.count {
-                hooks["preToolUse"] = cleaned
-            }
+            hooks["preToolUse"] = cleaned
         }
 
         config["hooks"] = hooks
         if config["version"] == nil { config["version"] = 1 }
-        writeJSON(hooksPath, config)
+        return config
+    }
+
+    private static func isLegacyCursorHookCommand(_ command: String?) -> Bool {
+        guard let command else { return false }
+        return command.contains("di-bridge") || command.contains("codeisland-state.py")
     }
 
     // MARK: - OpenCode

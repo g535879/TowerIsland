@@ -166,6 +166,10 @@ final class SessionManager {
     }
 
     func handleMessage(_ message: DIMessage) {
+        if shouldIgnoreMirroredSession(message) {
+            return
+        }
+
         switch message.type {
         case .sessionStart:
             startSession(message)
@@ -186,6 +190,28 @@ final class SessionManager {
         default:
             break
         }
+    }
+
+    private func shouldIgnoreMirroredSession(_ message: DIMessage) -> Bool {
+        guard let agentType = AgentType.from(message.agentType),
+              agentType == .claudeCode,
+              message.type == .sessionStart || message.type == .sessionEnd,
+              let sessionSuffix = mirroredSessionSuffix(from: message.sessionId)
+        else {
+            return false
+        }
+
+        return sessions.contains { session in
+            session.agentType == .cursor && mirroredSessionSuffix(from: session.id) == sessionSuffix
+        }
+    }
+
+    private func mirroredSessionSuffix(from sessionId: String) -> String? {
+        guard let separator = sessionId.firstIndex(of: "-") else {
+            return nil
+        }
+        let suffix = String(sessionId[sessionId.index(after: separator)...])
+        return suffix.isEmpty ? nil : suffix
     }
 
     func handlePermissionRequest(_ message: DIMessage, respond: @escaping @Sendable (Bool) -> Void) {

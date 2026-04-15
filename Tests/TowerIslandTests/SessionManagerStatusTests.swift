@@ -93,4 +93,27 @@ final class SessionManagerStatusTests: XCTestCase {
         XCTAssertNil(session.pendingQuestion)
         XCTAssertEqual(session.currentTool, "Read")
     }
+
+    func testIgnoresMirroredClaudeSessionForCursorConversation() {
+        let manager = SessionManager()
+
+        var cursorStart = DIMessage(type: .sessionStart, sessionId: "cursor-shared-conversation")
+        cursorStart.agentType = AgentType.cursor.rawValue
+        cursorStart.prompt = "hello"
+        manager.handleMessage(cursorStart)
+
+        var mirroredClaudeStart = DIMessage(type: .sessionStart, sessionId: "claude_code-shared-conversation")
+        mirroredClaudeStart.agentType = AgentType.claudeCode.rawValue
+        manager.handleMessage(mirroredClaudeStart)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.agentType, .cursor)
+
+        var mirroredClaudeEnd = DIMessage(type: .sessionEnd, sessionId: "claude_code-shared-conversation")
+        mirroredClaudeEnd.agentType = AgentType.claudeCode.rawValue
+        manager.handleMessage(mirroredClaudeEnd)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.status, .active)
+    }
 }
