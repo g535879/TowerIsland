@@ -124,9 +124,10 @@ final class NotchWindow: NSPanel {
 
     func resizeToFit(contentWidth: CGFloat, contentHeight: CGFloat, display: Bool = true) {
         let screen = Self.bestScreen()
-        let padding = Self.padding(forContentHeight: contentHeight)
+        let normalizedContentHeight = max(contentHeight, Self.collapsedHitHeight)
+        let padding = Self.padding(forContentHeight: normalizedContentHeight)
         let w = contentWidth + padding * 2
-        let h = contentHeight + padding
+        let h = normalizedContentHeight + padding
         let x: CGFloat
         if let cx = customX {
             x = max(screen.frame.origin.x,
@@ -146,7 +147,7 @@ final class NotchWindow: NSPanel {
     func resizeToFitCollapse(contentWidth: CGFloat, contentHeight: CGFloat) {
         let screen = Self.bestScreen()
         let targetW = contentWidth
-        let targetH = contentHeight
+        let targetH = max(contentHeight, Self.collapsedHitHeight)
         let targetX: CGFloat
         if let cx = customX {
             targetX = max(screen.frame.origin.x,
@@ -242,12 +243,19 @@ final class NotchWindow: NSPanel {
     }
 
     func setFrameDirect(_ rect: NSRect, display: Bool = true) {
-        super.setFrame(rect, display: display)
+        let normalized = NSRect(
+            x: rect.origin.x,
+            y: rect.origin.y,
+            width: rect.width,
+            height: max(rect.height, Self.collapsedHitHeight)
+        )
+        super.setFrame(normalized, display: display)
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        let clampedHeight = max(frameRect.height, Self.collapsedHitHeight)
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - clampedHeight
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
@@ -258,13 +266,14 @@ final class NotchWindow: NSPanel {
         } else {
             x = screen.frame.origin.x + (screen.frame.width - frameRect.width) / 2
         }
-        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: frameRect.height)
+        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight)
         super.setFrame(pinned, display: flag)
     }
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        let clampedHeight = max(frameRect.height, Self.collapsedHitHeight)
         let screen = Self.bestScreen()
-        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - frameRect.height
+        let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - clampedHeight
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
@@ -275,7 +284,7 @@ final class NotchWindow: NSPanel {
         } else {
             x = screen.frame.origin.x + (screen.frame.width - frameRect.width) / 2
         }
-        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: frameRect.height)
+        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight)
         super.setFrame(pinned, display: displayFlag, animate: animateFlag)
     }
 

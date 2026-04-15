@@ -22,6 +22,7 @@ struct NotchContentView: View {
     @State private var lastCollapseAt: Date = .distantPast
     @State private var expandPending = false
     @State private var collapseAnimating = false
+    @State private var collapseGeneration = 0
     /// Last known expanded `shapeHeight` (black panel), used to interpolate notch corner radii with `shapeHeight` during spring (avoids boolean snap).
     @State private var cachedExpandedShapeHeight: CGFloat = 220
     @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 3.0
@@ -207,6 +208,8 @@ struct NotchContentView: View {
 
     private func expand(to newState: IslandState) {
         guard !expandPending else { return }
+        collapseGeneration += 1
+        collapseAnimating = false
         expandPending = true
         let target = targetSize(for: newState)
         if case .expanded = newState {
@@ -228,6 +231,8 @@ struct NotchContentView: View {
     }
 
     private func collapse() {
+        collapseGeneration += 1
+        let generation = collapseGeneration
         lastCollapseAt = Date()
         collapseAnimating = true
         withAnimation(Self.collapseSpring) {
@@ -235,6 +240,7 @@ struct NotchContentView: View {
             state = .collapsed
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            guard generation == self.collapseGeneration, self.state == .collapsed else { return }
             if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
                 window.resizeToFitCollapse(contentWidth: self.pillWidth, contentHeight: self.collapsedOuterHeight)
             }
@@ -425,6 +431,10 @@ struct NotchContentView: View {
     private func pollMousePosition() {
         guard let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow else { return }
         guard !window.isDragging else { return }
+
+        if !window.isVisible && (manager.hasInteraction || !manager.visibleSessions.isEmpty) {
+            window.orderFrontRegardless()
+        }
 
         let obscured = window.isObscuredByPhysicalNotch()
         if obscured != islandObscuredByNotch {

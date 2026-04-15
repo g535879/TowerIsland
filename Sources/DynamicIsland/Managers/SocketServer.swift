@@ -1,6 +1,20 @@
 import Foundation
 import DIShared
 
+private func diLog(_ msg: String) {
+    let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(msg)\n"
+    let logPath = DISocketConfig.socketDir + "/debug.log"
+    if let handle = FileHandle(forWritingAtPath: logPath) {
+        handle.seekToEndOfFile()
+        if let data = line.data(using: .utf8) {
+            handle.write(data)
+        }
+        handle.closeFile()
+    } else {
+        FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
+    }
+}
+
 final class SocketServer: @unchecked Sendable {
     private let sessionManager: SessionManager
     private var serverFD: Int32 = -1
@@ -77,14 +91,22 @@ final class SocketServer: @unchecked Sendable {
 
     private func handleClient(_ fd: Int32) {
         guard let data = readAll(fd), !data.isEmpty else {
+            diLog("[SocketServer] No data from client")
             close(fd)
             return
         }
 
+        diLog("[SocketServer] Received \(data.count) bytes")
+
         guard let message = try? DIProtocol.decode(data) else {
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? "?"
+            diLog("[SocketServer] Failed to decode: \(preview)")
             close(fd)
             return
         }
+
+        let statusPreview = String((message.status ?? "nil").prefix(100))
+        diLog("[SocketServer] Message: type=\(message.type.rawValue) session=\(message.sessionId) agent=\(message.agentType ?? "nil") tool=\(message.tool ?? "nil") desc=\(message.permDescription ?? "nil") question=\(message.questionText ?? "nil") options=\(message.options?.joined(separator: ",") ?? "nil") status=\(statusPreview)")
 
         switch message.type {
         case .permissionRequest:
@@ -92,6 +114,7 @@ final class SocketServer: @unchecked Sendable {
                 self.sessionManager.handlePermissionRequest(message) { [weak self] approved in
                     self?.sendResponse(fd: fd, approved: approved, sessionId: message.sessionId)
                 }
+                diLog("[SocketServer] Sessions count: \(self.sessionManager.sessions.count)")
             }
 
         case .question:
@@ -103,6 +126,7 @@ final class SocketServer: @unchecked Sendable {
                     },
                     cancel: { close(fd) }
                 )
+                diLog("[SocketServer] Sessions count: \(self.sessionManager.sessions.count)")
             }
 
         case .planReview:
@@ -110,11 +134,13 @@ final class SocketServer: @unchecked Sendable {
                 self.sessionManager.handlePlanReview(message) { [weak self] approved, feedback in
                     self?.sendPlanResponse(fd: fd, approved: approved, feedback: feedback, sessionId: message.sessionId)
                 }
+                diLog("[SocketServer] Sessions count: \(self.sessionManager.sessions.count)")
             }
 
         default:
             Task { @MainActor in
                 self.sessionManager.handleMessage(message)
+                diLog("[SocketServer] Sessions count: \(self.sessionManager.sessions.count)")
             }
             close(fd)
         }

@@ -417,6 +417,7 @@ final class SessionManager {
 
     private func handleToolStart(_ message: DIMessage) {
         let session = findOrCreateSession(message)
+        clearStaleInteraction(session)
         let event = ToolEvent(tool: message.tool ?? "unknown", input: message.toolInput)
         session.events.append(event)
         session.currentTool = message.tool
@@ -425,6 +426,7 @@ final class SessionManager {
 
     private func handleToolComplete(_ message: DIMessage) {
         let session = findOrCreateSession(message)
+        clearStaleInteraction(session)
         if let idx = session.events.lastIndex(where: { $0.tool == (message.tool ?? "") && !$0.isComplete }) {
             session.events[idx].result = message.toolResult
             session.events[idx].linesAdded = message.linesAdded

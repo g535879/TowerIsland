@@ -95,7 +95,11 @@ struct DIBridge {
                             print(str)
                         }
                     } else if isClaudeCodeQuestion(hookType: hookType, stdinData: stdinData) {
-                        let json = buildClaudeCodeQuestionResponse(answer: answer, stdinData: stdinData)
+                        let json = buildClaudeCodeQuestionResponse(
+                            answer: answer,
+                            stdinData: stdinData,
+                            hookType: hookType
+                        )
                         print(json)
                     } else {
                         print(answer)
@@ -556,23 +560,48 @@ struct DIBridge {
         return isQuestionTool(toolName)
     }
 
-    static func buildClaudeCodeQuestionResponse(answer: String, stdinData: [String: Any]?) -> String {
+    static func buildClaudeCodeQuestionResponse(
+        answer: String,
+        stdinData: [String: Any]?,
+        hookType: String = "PreToolUse"
+    ) -> String {
         let toolInput = extractToolInput(stdinData) ?? [:]
         var updatedInput = toolInput
 
         let questions = toolInput["questions"] as? [[String: Any]] ?? []
         if !questions.isEmpty {
-            let questionText = (questions.first?["question"] as? String) ?? ""
-            updatedInput["answers"] = [questionText: answer]
+            var updatedQuestions = questions
+            var answerMap: [String: String] = [:]
+            if !updatedQuestions.isEmpty {
+                let questionText = (updatedQuestions[0]["question"] as? String)
+                    ?? (updatedQuestions[0]["header"] as? String)
+                    ?? ""
+                if !questionText.isEmpty {
+                    answerMap[questionText] = answer
+                }
+                updatedQuestions[0]["answer"] = answer
+                updatedQuestions[0]["answers"] = [answer]
+            }
+            updatedInput["questions"] = updatedQuestions
+            if !answerMap.isEmpty {
+                updatedInput["answers"] = answerMap
+            }
+            updatedInput["answer"] = answer
         } else {
             let questionText = toolInput["question"] as? String
                 ?? stdinData?["question"] as? String ?? ""
-            updatedInput["answers"] = [questionText: answer]
+            if !questionText.isEmpty {
+                updatedInput["answers"] = [questionText: answer]
+            }
+            updatedInput["answer"] = answer
         }
+
+        let lowerHook = hookType.lowercased()
+        let hookEventName = lowerHook.contains("permission") ? "PermissionRequest" : "PreToolUse"
 
         let jsonObj: [String: Any] = [
             "hookSpecificOutput": [
-                "hookEventName": "PreToolUse",
+                "hookEventName": hookEventName,
                 "permissionDecision": "allow",
                 "updatedInput": updatedInput
             ] as [String: Any]

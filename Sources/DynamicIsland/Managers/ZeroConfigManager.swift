@@ -181,9 +181,9 @@ enum ZeroConfigManager {
                 // other hooks are fire-and-forget so || true is safe.
                 let guardedCmd: String
                 if hookArg == "PermissionRequest" {
-                    guardedCmd = "[ -n \"$VSCODE_PID\" ] || \(bridgePath) --agent claude_code --hook \(hookArg)"
+                    guardedCmd = "\(bridgePath) --agent claude_code --hook \(hookArg)"
                 } else {
-                    guardedCmd = "[ -z \"$VSCODE_PID\" ] && \(bridgePath) --agent claude_code --hook \(hookArg) || true"
+                    guardedCmd = "\(bridgePath) --agent claude_code --hook \(hookArg) || true"
                 }
                 hookList.append([
                     "matcher": "*",
