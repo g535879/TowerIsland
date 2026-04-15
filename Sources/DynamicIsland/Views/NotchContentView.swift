@@ -392,9 +392,19 @@ struct NotchContentView: View {
 
             Spacer()
 
-            Text("\(manager.activeSessions.count) active")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.3))
+            Group {
+                if let session = interactionSession {
+                    Text(session.displayTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    Text("\(manager.activeSessions.count) active")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+            }
 
             Button {
                 expandedByHover = false
@@ -409,6 +419,15 @@ struct NotchContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private var interactionSession: AgentSession? {
+        switch state {
+        case .permission(let id), .question(let id), .planReview(let id):
+            return manager.sessions.first(where: { $0.id == id })
+        case .collapsed, .expanded:
+            return nil
+        }
     }
 
     private func openSettingsWindow() {
