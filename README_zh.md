@@ -179,12 +179,24 @@ Scripts/
 项目包含完整的 bash 集成测试套件：
 
 ```bash
+# 全量测试（每次提交前必须执行）
+# 1) 先确保 Tower Island 应用正在运行
+bash Scripts/test-all.sh
+
 # 运行所有测试（需要 app 正在运行）
 bash Scripts/test.sh
 
 # 运行指定模块
 bash Scripts/test.sh M1 M15 M17
 ```
+
+建议启用本地 git hook 强制此流程：
+
+```bash
+bash Scripts/install-git-hooks.sh
+```
+
+安装后，每次 `git commit` 会自动执行 `bash Scripts/test-all.sh`。
 
 测试模块覆盖：消息编码、会话生命周期、Agent 身份隔离、权限/问题/计划流程、多会话支持、完成音效去重、可配置保留时长等。
 

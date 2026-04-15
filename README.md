@@ -179,12 +179,24 @@ Scripts/
 The project includes a comprehensive bash integration test suite:
 
 ```bash
+# Full suite (required before every commit)
+# 1) Ensure Tower Island app is running
+bash Scripts/test-all.sh
+
 # Run all tests (requires app to be running)
 bash Scripts/test.sh
 
 # Run specific modules
 bash Scripts/test.sh M1 M15 M17
 ```
+
+Enforce this workflow locally with git hooks:
+
+```bash
+bash Scripts/install-git-hooks.sh
+```
+
+After installation, every `git commit` will run `bash Scripts/test-all.sh` automatically.
 
 Test modules cover: message encoding, session lifecycle, agent identity, permission/question/plan flows, multi-session support, completion sound dedup, configurable linger, and more.
 
