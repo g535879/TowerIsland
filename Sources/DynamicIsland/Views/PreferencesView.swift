@@ -597,7 +597,7 @@ struct PreferencesView: View {
     }
 
     private var canInstallUpdate: Bool {
-        updateManager.latestRelease?.dmgURL != nil
+        Self.shouldShowInstallButton(state: updateManager.state, latestRelease: updateManager.latestRelease)
     }
 
     private var updateLatestReleaseText: String {
@@ -676,6 +676,21 @@ struct PreferencesView: View {
         default:
             return false
         }
+    }
+
+    static func shouldShowInstallButton(
+        state: UpdateManager.State,
+        latestRelease: UpdateManager.ReleaseInfo?
+    ) -> Bool {
+        guard latestRelease?.dmgURL != nil else {
+            return false
+        }
+
+        if case .updateAvailable = state {
+            return true
+        }
+
+        return false
     }
 
     private func toggleLaunchAtLogin(_ enabled: Bool) {
