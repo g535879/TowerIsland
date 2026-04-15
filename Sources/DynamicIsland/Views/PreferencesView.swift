@@ -74,6 +74,12 @@ struct PreferencesView: View {
         } message: {
             Text("Tower Island will close and relaunch to finish the update.")
         }
+        .onAppear {
+            applyPendingPaneSelectionIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .towerIslandShowAboutPane)) { _ in
+            applyPendingPaneSelectionIfNeeded(fallbackToAbout: true)
+        }
     }
 
     // MARK: - Toolbar
@@ -702,6 +708,20 @@ struct PreferencesView: View {
             }
         } catch {
             print("[Preferences] Launch at login error: \(error)")
+        }
+    }
+
+    private func applyPendingPaneSelectionIfNeeded(fallbackToAbout: Bool = false) {
+        let defaults = UserDefaults.standard
+        let pending = defaults.string(forKey: PreferencesRouting.pendingPaneSelectionKey)
+        if pending == PreferencesRouting.aboutPaneValue {
+            selection = .about
+            defaults.removeObject(forKey: PreferencesRouting.pendingPaneSelectionKey)
+            return
+        }
+
+        if fallbackToAbout {
+            selection = .about
         }
     }
 }

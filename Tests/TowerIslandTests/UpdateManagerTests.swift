@@ -374,4 +374,32 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertFalse(UpdateManager.isRemoteVersionNewer("   ", than: "1.0.0"))
         XCTAssertFalse(UpdateManager.isRemoteVersionNewer("1.0.1", than: "   "))
     }
+
+    @MainActor
+    func testBuildsReleasePayloadFromLatestRedirectURL() throws {
+        let checkedAt = ISO8601DateFormatter().date(from: "2026-04-15T06:42:03Z")!
+        let payload = try UpdateManager.releaseDataFromLatestRedirectURL(
+            URL(string: "https://github.com/g535879/TowerIsland/releases/tag/v1.2.8")!,
+            checkedAt: checkedAt
+        )
+        let release = try UpdateManager.githubReleaseDecoder.decode(UpdateManager.ReleaseInfo.self, from: payload)
+
+        XCTAssertEqual(release.tagName, "v1.2.8")
+        XCTAssertEqual(release.htmlURL, URL(string: "https://github.com/g535879/TowerIsland/releases/tag/v1.2.8"))
+        XCTAssertEqual(release.publishedAt, checkedAt)
+        XCTAssertEqual(
+            release.dmgURL,
+            URL(string: "https://github.com/g535879/TowerIsland/releases/download/v1.2.8/TowerIsland.dmg")
+        )
+    }
+
+    @MainActor
+    func testRejectsUnexpectedLatestRedirectURL() {
+        XCTAssertThrowsError(
+            try UpdateManager.releaseDataFromLatestRedirectURL(
+                URL(string: "https://github.com/g535879/TowerIsland/releases")!,
+                checkedAt: Date()
+            )
+        )
+    }
 }
