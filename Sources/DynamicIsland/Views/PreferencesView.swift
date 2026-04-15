@@ -32,7 +32,9 @@ private enum PreferencesPane: String, CaseIterable, Identifiable {
 struct PreferencesView: View {
     @Environment(AudioEngine.self) private var audioEngine
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(UpdateManager.self) private var updateManager
     @State private var selection: PreferencesPane = .general
+    @State private var isShowingInstallConfirmation = false
 
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showOnAllSpaces") private var showOnAllSpaces = true
@@ -58,6 +60,20 @@ struct PreferencesView: View {
         }
         .frame(width: 680, height: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .confirmationDialog(
+            "Install update now?",
+            isPresented: $isShowingInstallConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Install Update") {
+                Task { @MainActor in
+                    await updateManager.installUpdate()
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Tower Island will close and relaunch to finish the update.")
+        }
     }
 
     // MARK: - Toolbar
@@ -69,8 +85,17 @@ struct PreferencesView: View {
                     selection = pane
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: pane.icon)
-                            .font(.system(size: 16, weight: .medium))
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: pane.icon)
+                                .font(.system(size: 16, weight: .medium))
+
+                            if pane == .about, hasUpdateAvailable {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 7, height: 7)
+                                    .offset(x: 6, y: -4)
+                            }
+                        }
                         Text(pane.title)
                             .font(.system(size: 10, weight: .medium))
                     }
@@ -316,6 +341,55 @@ struct PreferencesView: View {
                 }
             }
 
+            section("Updates") {
+                card {
+                    row("Current Version") {
+                        Text(updateManager.currentVersion)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    dividerLine
+                    row("Latest Release") {
+                        Text(updateLatestReleaseText)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    dividerLine
+                    row("Last Checked") {
+                        Text(updateLastCheckedText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    dividerLine
+                    row("Status", subtitle: updateStatusDetailText) {
+                        Text(updateStatusText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(updateStatusColor)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    dividerLine
+                    row("Actions") {
+                        HStack(spacing: 8) {
+                            Button(updateCheckButtonTitle) {
+                                Task { @MainActor in
+                                    await updateManager.checkForUpdates()
+                                }
+                            }
+                            .controlSize(.small)
+                            .disabled(isCheckingForUpdates || isInstallingUpdate)
+
+                            if canInstallUpdate {
+                                Button(updateInstallButtonTitle) {
+                                    isShowingInstallConfirmation = true
+                                }
+                                .controlSize(.small)
+                                .disabled(isInstallingUpdate)
+                            }
+                        }
+                    }
+                }
+            }
+
             section("Maintenance") {
                 card {
                     row("Reconfigure Hooks") {
@@ -506,6 +580,102 @@ struct PreferencesView: View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "\(version) (\(build))"
+    }
+
+    private var isCheckingForUpdates: Bool {
+        if case .checking = updateManager.state {
+            return true
+        }
+        return false
+    }
+
+    private var isInstallingUpdate: Bool {
+        if case .installing = updateManager.state {
+            return true
+        }
+        return false
+    }
+
+    private var canInstallUpdate: Bool {
+        updateManager.latestRelease?.dmgURL != nil
+    }
+
+    private var updateLatestReleaseText: String {
+        updateManager.latestRelease?.normalizedVersion ?? "Not checked yet"
+    }
+
+    private var updateLastCheckedText: String {
+        guard let lastCheckedAt = updateManager.lastCheckedAt else {
+            return "Never"
+        }
+
+        return lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var updateCheckButtonTitle: String {
+        isCheckingForUpdates ? "Checking..." : "Check for Updates"
+    }
+
+    private var updateInstallButtonTitle: String {
+        if let version = updateManager.latestRelease?.normalizedVersion {
+            return "Install \(version)"
+        }
+        return "Install Update"
+    }
+
+    private var updateStatusText: String {
+        switch updateManager.state {
+        case .idle:
+            return canInstallUpdate ? "Update ready" : "Idle"
+        case .checking:
+            return "Checking"
+        case .upToDate:
+            return "Up to date"
+        case .updateAvailable(let version):
+            return "Version \(version) available"
+        case .installing(let stage):
+            return stage.capitalized
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    private var updateStatusDetailText: String? {
+        switch updateManager.state {
+        case .failed(let message):
+            return message
+        case .installing:
+            return "Tower Island will close and relaunch when installation is ready."
+        default:
+            return nil
+        }
+    }
+
+    private var updateStatusColor: Color {
+        switch updateManager.state {
+        case .failed:
+            return .red
+        case .updateAvailable:
+            return .orange
+        case .installing:
+            return .blue
+        default:
+            return .secondary
+        }
+    }
+
+    private var hasUpdateAvailable: Bool {
+        switch updateManager.state {
+        case .updateAvailable:
+            return true
+        case .idle:
+            if let version = updateManager.latestRelease?.normalizedVersion {
+                return UpdateManager.isRemoteVersionNewer(version, than: updateManager.currentVersion)
+            }
+            return false
+        default:
+            return false
+        }
     }
 
     private func toggleLaunchAtLogin(_ enabled: Bool) {

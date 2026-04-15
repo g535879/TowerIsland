@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import Observation
 import SwiftUI
 
 @MainActor
@@ -11,10 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let sessionManager = SessionManager()
     let audioEngine = AudioEngine()
+    let updateManager = UpdateManager()
     private var socketServer: SocketServer?
     private var notchWindow: NotchWindow?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var checkForUpdatesMenuItem: NSMenuItem?
+    private var installUpdateMenuItem: NSMenuItem?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         if !Self.acquireSingleInstanceLock() {
@@ -41,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionManager.audioEngine = audioEngine
         setupNotchWindow()
         setupMenuBarItem()
+        observeUpdateState()
         startSocketServer()
         sessionManager.startCleanupTimer()
         ZeroConfigManager.configureAllAgents()
@@ -53,7 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: UserDefaults.didChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.notchWindow?.applySpaceBehavior()
+            Task { @MainActor [weak self] in
+                self?.notchWindow?.applySpaceBehavior()
+            }
         }
     }
 
@@ -69,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
             .environment(sessionManager)
             .environment(audioEngine)
+            .environment(updateManager)
         )
         hostView.frame = window.contentView!.bounds
         hostView.autoresizingMask = [.width, .height]
@@ -92,10 +100,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Show Island", action: #selector(showNotch), keyEquivalent: "s"))
         menu.addItem(NSMenuItem(title: "Configure Agents...", action: #selector(reconfigure), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(checkForUpdatesFromMenu),
+            keyEquivalent: ""
+        )
+        let installUpdateItem = NSMenuItem(
+            title: "Install Update...",
+            action: #selector(installUpdateFromMenu),
+            keyEquivalent: ""
+        )
+        installUpdateItem.isHidden = true
+        menu.addItem(checkForUpdatesItem)
+        menu.addItem(installUpdateItem)
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(openPreferences), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem?.menu = menu
+        checkForUpdatesMenuItem = checkForUpdatesItem
+        installUpdateMenuItem = installUpdateItem
+        refreshUpdateMenuState()
     }
 
     private func startSocketServer() {
@@ -115,6 +139,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func reconfigure() {
         ZeroConfigManager.configureAllAgents()
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        Task { @MainActor in
+            await updateManager.checkForUpdates()
+        }
+    }
+
+    @objc private func installUpdateFromMenu() {
+        Task { @MainActor in
+            await updateManager.installUpdate()
+        }
     }
 
     @objc func openPreferences() {
@@ -150,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: PreferencesView()
                 .environment(sessionManager)
                 .environment(audioEngine)
+                .environment(updateManager)
         )
 
         settingsWindow = w
@@ -162,8 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: w,
             queue: .main
         ) { [weak self] _ in
-            NSApp.setActivationPolicy(previousPolicy)
-            self?.settingsWindow = nil
+            Task { @MainActor [weak self] in
+                NSApp.setActivationPolicy(previousPolicy)
+                self?.settingsWindow = nil
+            }
         }
     }
 
@@ -193,6 +232,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for app in others {
             app.activate(options: [.activateAllWindows])
         }
+    }
+
+    private func observeUpdateState() {
+        withObservationTracking {
+            _ = updateManager.state
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.refreshUpdateMenuState()
+                self?.observeUpdateState()
+            }
+        }
+
+        withObservationTracking {
+            _ = updateManager.latestRelease
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.refreshUpdateMenuState()
+                self?.observeUpdateState()
+            }
+        }
+    }
+
+    private func refreshUpdateMenuState() {
+        let imageName: String
+
+        switch updateManager.state {
+        case .updateAvailable(let version):
+            checkForUpdatesMenuItem?.title = "Update Available: \(version)"
+            checkForUpdatesMenuItem?.isEnabled = true
+            installUpdateMenuItem?.title = "Install \(version)..."
+            installUpdateMenuItem?.isHidden = false
+            installUpdateMenuItem?.isEnabled = true
+            imageName = "arrow.down.circle.fill"
+        case .checking:
+            checkForUpdatesMenuItem?.title = "Checking for Updates..."
+            checkForUpdatesMenuItem?.isEnabled = false
+            installUpdateMenuItem?.isHidden = true
+            imageName = "arrow.triangle.2.circlepath.circle"
+        case .installing(let stage):
+            checkForUpdatesMenuItem?.title = "Installing Update (\(stage))..."
+            checkForUpdatesMenuItem?.isEnabled = false
+            installUpdateMenuItem?.isHidden = true
+            imageName = "arrow.down.circle.fill"
+        case .upToDate:
+            checkForUpdatesMenuItem?.title = "Up to Date"
+            checkForUpdatesMenuItem?.isEnabled = true
+            installUpdateMenuItem?.isHidden = true
+            imageName = "sparkle"
+        case .failed:
+            checkForUpdatesMenuItem?.title = "Check for Updates..."
+            checkForUpdatesMenuItem?.isEnabled = true
+            installUpdateMenuItem?.isHidden = updateManager.latestRelease?.dmgURL == nil
+            installUpdateMenuItem?.title = "Install Update..."
+            installUpdateMenuItem?.isEnabled = updateManager.latestRelease?.dmgURL != nil
+            imageName = "exclamationmark.circle"
+        case .idle:
+            checkForUpdatesMenuItem?.title = "Check for Updates..."
+            checkForUpdatesMenuItem?.isEnabled = true
+            if let version = updateManager.latestRelease?.normalizedVersion,
+               updateManager.latestRelease?.dmgURL != nil,
+               UpdateManager.isRemoteVersionNewer(version, than: updateManager.currentVersion) {
+                installUpdateMenuItem?.title = "Install \(version)..."
+                installUpdateMenuItem?.isHidden = false
+                installUpdateMenuItem?.isEnabled = true
+                imageName = "arrow.down.circle.fill"
+            } else {
+                installUpdateMenuItem?.isHidden = true
+                imageName = "sparkle"
+            }
+        }
+
+        statusItem?.button?.image = NSImage(
+            systemSymbolName: imageName,
+            accessibilityDescription: "Tower Island"
+        )
     }
 }
 
