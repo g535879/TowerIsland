@@ -1,4 +1,5 @@
 import Observation
+import AppKit
 import Foundation
 
 @MainActor
@@ -87,6 +88,20 @@ final class UpdateManager {
     var currentVersion: String {
         let rawVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         return Self.normalize(version: rawVersion)
+    }
+
+    var installedAppPath: String {
+        let bundleURL = Bundle.main.bundleURL
+        if bundleURL.pathExtension == "app" {
+            return bundleURL.path
+        }
+
+        if let bundleIdentifier = Bundle.main.bundleIdentifier,
+           let installedURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            return installedURL.path
+        }
+
+        return "/Applications/Tower Island.app"
     }
 
     nonisolated static func normalize(version: String) -> String {
@@ -192,7 +207,7 @@ final class UpdateManager {
             try await updater.install(
                 version: release.normalizedVersion,
                 releaseURL: dmgURL,
-                appPath: Bundle.main.bundlePath,
+                appPath: installedAppPath,
                 onStage: stageHandler
             )
             state = .idle
