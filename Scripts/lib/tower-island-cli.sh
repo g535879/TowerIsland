@@ -117,6 +117,64 @@ tower_island_shell_profile_path_hint() {
     esac
 }
 
+tower_island_shell_profile_path() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-}")"
+
+    case "$shell_name" in
+        zsh)
+            printf '%s\n' "$HOME/.zshrc"
+            ;;
+        bash)
+            printf '%s\n' "$HOME/.bash_profile"
+            ;;
+        fish)
+            printf '%s\n' "$HOME/.config/fish/config.fish"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+tower_island_path_export_line() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-}")"
+
+    case "$shell_name" in
+        fish)
+            printf '%s\n' 'set -gx PATH "$HOME/.tower-island/bin" $PATH'
+            ;;
+        *)
+            printf '%s\n' 'export PATH="$HOME/.tower-island/bin:$PATH"'
+            ;;
+    esac
+}
+
+tower_island_ensure_cli_on_path() {
+    if tower_island_cli_bin_in_path; then
+        return 0
+    fi
+
+    local profile_path profile_dir export_line
+    profile_path="$(tower_island_shell_profile_path)" || return 1
+    profile_dir="$(dirname "$profile_path")"
+    export_line="$(tower_island_path_export_line)"
+
+    mkdir -p "$profile_dir"
+    touch "$profile_path"
+
+    if grep -F 'tower-island/bin' "$profile_path" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    {
+        printf '\n'
+        printf '%s\n' '# Added by Tower Island'
+        printf '%s\n' "$export_line"
+    } >> "$profile_path"
+}
+
 tower_island_print_path_guidance() {
     if tower_island_cli_bin_in_path; then
         return 0
@@ -128,6 +186,24 @@ tower_island_print_path_guidance() {
     echo ""
     echo "To run 'tower-island upgrade' from any directory, add this to $profile_hint:"
     echo "  export PATH=\"$TOWER_ISLAND_BIN_DIR:\$PATH\""
+}
+
+tower_island_configure_cli_path() {
+    if tower_island_cli_bin_in_path; then
+        return 0
+    fi
+
+    if tower_island_ensure_cli_on_path; then
+        local profile_hint
+        profile_hint="$(tower_island_shell_profile_path_hint)"
+        echo ""
+        echo "Configured your shell PATH in $profile_hint."
+        echo "Open a new shell window, or run:"
+        echo "  export PATH=\"$TOWER_ISLAND_BIN_DIR:\$PATH\""
+        return 0
+    fi
+
+    tower_island_print_path_guidance
 }
 
 tower_island_upgrade() {
@@ -201,7 +277,7 @@ tower_island_upgrade() {
 
     echo "Upgraded Tower Island to $tag"
     echo "Release asset: $asset_api_url"
-    tower_island_print_path_guidance
+    tower_island_configure_cli_path
 }
 
 tower_island_dispatch() {

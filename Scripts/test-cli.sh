@@ -103,6 +103,47 @@ test_shell_profile_path_hint_for_bash() {
         || fail "expected bash profile hint, got: $hint"
 }
 
+test_ensure_cli_on_path_appends_zsh_profile_once() {
+    local tmp_home profile
+    tmp_home="$(mktemp -d)"
+    profile="$tmp_home/.zshrc"
+
+    HOME="$tmp_home" \
+    TOWER_ISLAND_BIN_DIR="$tmp_home/.tower-island/bin" \
+    SHELL=/bin/zsh \
+    PATH="/usr/bin:/bin" \
+    tower_island_ensure_cli_on_path >/dev/null
+
+    [[ -f "$profile" ]] \
+        || fail "expected zsh profile to be created"
+    grep -F 'export PATH="$HOME/.tower-island/bin:$PATH"' "$profile" >/dev/null \
+        || fail "expected PATH export to be appended"
+
+    HOME="$tmp_home" \
+    TOWER_ISLAND_BIN_DIR="$tmp_home/.tower-island/bin" \
+    SHELL=/bin/zsh \
+    PATH="/usr/bin:/bin" \
+    tower_island_ensure_cli_on_path >/dev/null
+
+    [[ "$(grep -c 'tower-island/bin' "$profile")" -eq 1 ]] \
+        || fail "expected PATH export to be appended only once"
+}
+
+test_ensure_cli_on_path_uses_fish_syntax() {
+    local tmp_home profile
+    tmp_home="$(mktemp -d)"
+    profile="$tmp_home/.config/fish/config.fish"
+
+    HOME="$tmp_home" \
+    TOWER_ISLAND_BIN_DIR="$tmp_home/.tower-island/bin" \
+    SHELL=/bin/fish \
+    PATH="/usr/bin:/bin" \
+    tower_island_ensure_cli_on_path >/dev/null
+
+    grep -F 'set -gx PATH "$HOME/.tower-island/bin" $PATH' "$profile" >/dev/null \
+        || fail "expected fish PATH config to be appended"
+}
+
 test_selects_dmg_asset_from_release_json
 test_rejects_release_without_dmg_asset
 test_help_for_empty_command
@@ -113,5 +154,7 @@ test_cli_bin_path_detected_in_path
 test_cli_bin_path_detected_as_missing
 test_shell_profile_path_hint_for_zsh
 test_shell_profile_path_hint_for_bash
+test_ensure_cli_on_path_appends_zsh_profile_once
+test_ensure_cli_on_path_uses_fish_syntax
 
 echo "CLI tests passed"
