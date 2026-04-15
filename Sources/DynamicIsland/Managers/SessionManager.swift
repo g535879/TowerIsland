@@ -15,6 +15,11 @@ final class SessionManager {
     private var cleanupTimer: Timer?
     private var workspaceObserver: Any?
 
+    /// Debounces the "Session complete" (`sessionEnd`) chime when assistant text arrives via `statusUpdate`
+    /// (Notification hook) as well as `sessionEnd`, so streaming updates do not spam sounds.
+    private var lastAssistantReplySoundAt: [String: TimeInterval] = [:]
+    private let assistantReplySoundMinInterval: TimeInterval = 1.8
+
     /// Caches the last answer per session so that duplicate follow-up events from
     /// agents like OpenCode (same question, same options, fired within 2 seconds)
     /// are auto-replied without re-showing the question panel.
@@ -412,7 +417,7 @@ final class SessionManager {
     private func endSession(_ message: DIMessage) {
         let agentType = AgentType.from(message.agentType) ?? .claudeCode
 
-        guard let session = sessions.first(where: { $0.id == message.sessionId }) else { return }
+        guard let session = sessionForEndMessage(message) else { return }
         let alreadyCompleted = session.status == .completed
         updateTokenUsage(session: session, message: message)
 
@@ -444,7 +449,7 @@ final class SessionManager {
             markCompleted(session)
         }
         if !alreadyCompleted {
-            audioEngine?.play(.sessionEnd)
+            playAssistantReplySoundDebounced(sessionId: session.id)
         }
 
         if session.status == .completed, selectedSessionId == session.id {
@@ -521,8 +526,27 @@ final class SessionManager {
         } else if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
             session.status = .error
             audioEngine?.play(.error)
+        } else if !text.isEmpty {
+            // Assistant reply via Notification / progress — same chime as session end (user preference: "Session complete").
+            playAssistantReplySoundDebounced(sessionId: session.id)
         }
         updateTokenUsage(session: session, message: message)
+    }
+
+    /// Resolves the session for `sessionEnd` when hooks use `cursor-*` vs `claude_code-*` ids for the same run.
+    private func sessionForEndMessage(_ message: DIMessage) -> AgentSession? {
+        if let s = sessions.first(where: { $0.id == message.sessionId }) {
+            return s
+        }
+        return sessionMatchingMirroredSuffix(of: message.sessionId)
+    }
+
+    private func playAssistantReplySoundDebounced(sessionId: String) {
+        let now = Date().timeIntervalSince1970
+        let last = lastAssistantReplySoundAt[sessionId] ?? 0
+        guard now - last >= assistantReplySoundMinInterval else { return }
+        lastAssistantReplySoundAt[sessionId] = now
+        audioEngine?.play(.sessionEnd)
     }
 
     private func handleSubagentStart(_ message: DIMessage) {

@@ -7,7 +7,7 @@ BUILD_DIR="$PROJECT_DIR/.build"
 APP_NAME="Tower Island"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DMG_OUTPUT="$BUILD_DIR/TowerIsland.dmg"
-VERSION="${1:-1.3.0}"
+VERSION="${1:-1.3.1}"
 
 cd "$PROJECT_DIR"
 
