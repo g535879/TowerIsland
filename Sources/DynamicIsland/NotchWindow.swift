@@ -57,6 +57,9 @@ final class NotchWindow: NSPanel {
         titlebarAppearsTransparent = true
         animationBehavior = .none
         isReleasedWhenClosed = false
+        // Avoid AppKit frame-restore paths that can throw during setFrame (seen in crash reports).
+        isRestorable = false
+        setFrameAutosaveName("")
 
         applySpaceBehavior()
 
@@ -129,7 +132,7 @@ final class NotchWindow: NSPanel {
         let w = contentWidth + padding * 2
         let h = normalizedContentHeight + padding
         let x: CGFloat
-        if let cx = customX {
+        if let cx = customX, cx.isFinite {
             x = max(screen.frame.origin.x,
                     min(cx - w / 2, screen.frame.origin.x + screen.frame.width - w))
         } else {
@@ -137,19 +140,19 @@ final class NotchWindow: NSPanel {
         }
         let screenTop = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen)
         let yComputed = screenTop - h
-        let rect = NSRect(x: x, y: yComputed, width: w, height: h)
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = 0
+        let rect = Self.safeFrame(NSRect(x: x, y: yComputed, width: w, height: h), screen: screen)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         setFrameDirect(rect, display: display)
-        NSAnimationContext.endGrouping()
+        CATransaction.commit()
     }
 
     func resizeToFitCollapse(contentWidth: CGFloat, contentHeight: CGFloat) {
         let screen = Self.bestScreen()
-        let targetW = contentWidth
+        let targetW = max(1, contentWidth.isFinite ? contentWidth : 180)
         let targetH = max(contentHeight, Self.collapsedHitHeight)
         let targetX: CGFloat
-        if let cx = customX {
+        if let cx = customX, cx.isFinite {
             targetX = max(screen.frame.origin.x,
                           min(cx - targetW / 2, screen.frame.origin.x + screen.frame.width - targetW))
         } else {
@@ -161,15 +164,36 @@ final class NotchWindow: NSPanel {
         isDragging = false
         dragTracking = false
 
-        let target = NSRect(x: targetX, y: targetY, width: targetW, height: targetH)
+        let target = Self.safeFrame(
+            NSRect(x: targetX, y: targetY, width: targetW, height: targetH),
+            screen: screen
+        )
+        // No NSAnimationContext: grouping has been observed to rethrow through runAnimationGroup when
+        // AppKit mutates window frame (crash: NSMutableDictionary initWithContentsOfFile: in _reallySetFrame:).
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = 0
-        NSAnimationContext.current.allowsImplicitAnimation = false
         setFrameDirect(target, display: true)
-        NSAnimationContext.endGrouping()
         CATransaction.commit()
+    }
+
+    /// Ensures window frames never propagate NaN/Inf into AppKit (can abort inside `_reallySetFrame:`).
+    private static func safeFrame(_ rect: NSRect, screen: NSScreen) -> NSRect {
+        let sf = screen.frame
+        let minW: CGFloat = 1
+        let minH = collapsedHitHeight
+        var w = rect.width
+        var h = rect.height
+        var x = rect.origin.x
+        var y = rect.origin.y
+        if !w.isFinite || w < minW { w = minW }
+        if !h.isFinite || h < minH { h = minH }
+        if !x.isFinite { x = sf.midX - w / 2 }
+        if !y.isFinite { y = sf.maxY - h }
+        w = min(w, max(minW, sf.width))
+        h = min(h, max(minH, sf.height))
+        x = max(sf.minX, min(x, sf.maxX - w))
+        y = max(sf.minY, min(y, sf.maxY - h))
+        return NSRect(x: x, y: y, width: w, height: h)
     }
 
     static func bestScreen() -> NSScreen {
@@ -243,48 +267,60 @@ final class NotchWindow: NSPanel {
     }
 
     func setFrameDirect(_ rect: NSRect, display: Bool = true) {
-        let normalized = NSRect(
-            x: rect.origin.x,
-            y: rect.origin.y,
-            width: rect.width,
-            height: max(rect.height, Self.collapsedHitHeight)
+        let screen = Self.bestScreen()
+        let normalized = Self.safeFrame(
+            NSRect(
+                x: rect.origin.x,
+                y: rect.origin.y,
+                width: rect.width,
+                height: max(rect.height, Self.collapsedHitHeight)
+            ),
+            screen: screen
         )
         super.setFrame(normalized, display: display)
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        guard frameRect.width.isFinite, frameRect.height.isFinite else { return }
         let clampedHeight = max(frameRect.height, Self.collapsedHitHeight)
         let screen = Self.bestScreen()
         let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - clampedHeight
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
-        } else if let cx = customX {
+        } else if let cx = customX, cx.isFinite {
             x = max(screen.frame.origin.x,
                     min(cx - frameRect.width / 2,
                         screen.frame.origin.x + screen.frame.width - frameRect.width))
         } else {
             x = screen.frame.origin.x + (screen.frame.width - frameRect.width) / 2
         }
-        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight)
+        let pinned = Self.safeFrame(
+            NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight),
+            screen: screen
+        )
         super.setFrame(pinned, display: flag)
     }
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        guard frameRect.width.isFinite, frameRect.height.isFinite else { return }
         let clampedHeight = max(frameRect.height, Self.collapsedHitHeight)
         let screen = Self.bestScreen()
         let topY = screen.frame.origin.y + screen.frame.height - Self.islandTopOffset(for: screen) - clampedHeight
         let x: CGFloat
         if isDragging || dragTracking {
             x = frame.origin.x
-        } else if let cx = customX {
+        } else if let cx = customX, cx.isFinite {
             x = max(screen.frame.origin.x,
                     min(cx - frameRect.width / 2,
                         screen.frame.origin.x + screen.frame.width - frameRect.width))
         } else {
             x = screen.frame.origin.x + (screen.frame.width - frameRect.width) / 2
         }
-        let pinned = NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight)
+        let pinned = Self.safeFrame(
+            NSRect(x: x, y: topY, width: frameRect.width, height: clampedHeight),
+            screen: screen
+        )
         super.setFrame(pinned, display: displayFlag, animate: animateFlag)
     }
 

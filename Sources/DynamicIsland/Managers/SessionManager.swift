@@ -214,6 +214,18 @@ final class SessionManager {
         return suffix.isEmpty ? nil : suffix
     }
 
+    /// Bridges often emit both `cursor-<uuid>` and `claude_code-<uuid>` for one run; keep a single island row.
+    private func mergeAgentTypesForMirror(_ existing: AgentType, _ incoming: AgentType) -> AgentType {
+        if existing == .cursor || incoming == .cursor { return .cursor }
+        return existing
+    }
+
+    /// Returns another session whose id shares the same mirrored suffix (paired hooks).
+    private func sessionMatchingMirroredSuffix(of sessionId: String) -> AgentSession? {
+        guard let suffix = mirroredSessionSuffix(from: sessionId) else { return nil }
+        return sessions.first { mirroredSessionSuffix(from: $0.id) == suffix && $0.id != sessionId }
+    }
+
     func handlePermissionRequest(_ message: DIMessage, respond: @escaping @Sendable (Bool) -> Void) {
         let realAgent = AgentType.from(message.agentType) ?? .claudeCode
         let session = findOrCreateSessionForInteraction(message)
@@ -352,6 +364,29 @@ final class SessionManager {
             }
             updateTokenUsage(session: existing, message: message)
             selectedSessionId = existing.id
+            return
+        }
+
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            twin.status = .active
+            twin.statusText = ""
+            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
+            clearStaleInteraction(twin)
+            if let t = message.terminal, !t.isEmpty { twin.terminal = t }
+            if let w = message.workingDir, !w.isEmpty { twin.workingDirectory = w }
+            if let p = message.prompt, !p.isEmpty {
+                twin.prompt = p
+                twin.chatHistory.append(ChatMessage(timestamp: Date(), role: .user, content: p))
+                audioEngine?.play(.sessionStart)
+            }
+            if let ts = message.termSessionId, !ts.isEmpty { twin.termSessionId = ts }
+            if twin.windowNumber == nil {
+                twin.windowNumber = TerminalJumpManager.captureFrontWindowNumber(
+                    for: twin.agentType, terminal: twin.terminal)
+            }
+            updateTokenUsage(session: twin, message: message)
+            selectedSessionId = twin.id
             return
         }
 
@@ -565,14 +600,18 @@ final class SessionManager {
         if let m = message.model, !m.isEmpty { session.tokenUsage.model = m }
     }
 
-    /// For interactive requests (permission/question/plan), skip parentSession folding
-    /// so the requesting agent keeps its own session and doesn't collide with Cursor activity.
+    /// Interactive requests fold mirrored hook ids (`cursor-*` / `claude_code-*` same suffix) like `findOrCreateSession`.
     private func findOrCreateSessionForInteraction(_ message: DIMessage) -> AgentSession {
         let agentType = AgentType.from(message.agentType) ?? .claudeCode
 
         if let existing = sessions.first(where: { $0.id == message.sessionId && $0.status != .completed }) {
             existing.lastActivityTime = Date()
             return existing
+        }
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
+            return twin
         }
         if let sameAgent = activeSessions.first(where: { $0.agentType == agentType }) {
             sameAgent.lastActivityTime = Date()
@@ -606,6 +645,13 @@ final class SessionManager {
             completed.lastActivityTime = Date()
             if reactivate { completed.status = .active }
             return completed
+        }
+
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
+            if twin.status == .completed, reactivate { twin.status = .active }
+            return twin
         }
 
         let session = AgentSession(

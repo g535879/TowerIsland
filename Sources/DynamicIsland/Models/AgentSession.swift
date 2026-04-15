@@ -70,7 +70,8 @@ struct GitCheckpoint: Identifiable, Sendable {
 @Observable
 final class AgentSession: Identifiable {
     let id: String
-    let agentType: AgentType
+    /// May be updated when bridging both Cursor and Claude hooks for the same logical session (mirrored id suffix).
+    var agentType: AgentType
     let startTime: Date
     var terminal: String
     var workingDirectory: String

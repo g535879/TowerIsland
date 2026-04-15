@@ -60,16 +60,7 @@ struct NotchContentView: View {
             let listH = min(CGFloat(count) * 80 + 30, 480)
             return Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
         case .permission(let id):
-            let perm = manager.sessions.first(where: { $0.id == id })?.pendingPermission
-            var h: CGFloat = 42 + 1 + 30
-            let hasDesc = perm != nil && !perm!.description.isEmpty
-            let hasPath = perm?.filePath.map { !$0.isEmpty } ?? false
-            let hasDiff = perm?.diff.map { !$0.isEmpty } ?? false
-            h += hasDesc ? 52 : (hasPath ? 52 : 0)
-            if hasDesc && hasPath { h += 22 }
-            if hasDiff { h += 130 }
-            h += 52
-            return min(h, 480)
+            return permissionExpandedTotalHeight(sessionId: id)
         case .question(let id):
             let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 0
             let baseHeight: CGFloat = 120
@@ -77,6 +68,26 @@ struct NotchContentView: View {
             return min(baseHeight + optionHeight, 480)
         case .planReview: return 480
         }
+    }
+
+    /// Permission card body only (matches `PermissionApprovalView` layout estimate).
+    private func permissionCardInnerHeight(sessionId: String) -> CGFloat {
+        let perm = manager.sessions.first(where: { $0.id == sessionId })?.pendingPermission
+        var h: CGFloat = 42 + 1 + 30
+        let hasDesc = perm != nil && !perm!.description.isEmpty
+        let hasPath = perm?.filePath.map { !$0.isEmpty } ?? false
+        let hasDiff = perm?.diff.map { !$0.isEmpty } ?? false
+        h += hasDesc ? 52 : (hasPath ? 52 : 0)
+        if hasDesc && hasPath { h += 22 }
+        if hasDiff { h += 130 }
+        h += 52
+        return min(h, 480)
+    }
+
+    /// Full expanded height for permission mode: island toolbar + card + bottom inset (same as session list layout).
+    private func permissionExpandedTotalHeight(sessionId: String) -> CGFloat {
+        let inner = permissionCardInnerHeight(sessionId: sessionId)
+        return inner + Self.expandedPanelHeaderHeight + Self.expandedPanelBottomInset
     }
 
     private var shapeWidth: CGFloat {
@@ -239,12 +250,19 @@ struct NotchContentView: View {
             showContent = false
             state = .collapsed
         }
+        // Defer NSWindow frame sync to the next main runloop turn so we are not inside SwiftUI's
+        // animation/layout commit (reduces AppKit exceptions in _reallySetFrame: during collapse).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             guard generation == self.collapseGeneration, self.state == .collapsed else { return }
-            if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
-                window.resizeToFitCollapse(contentWidth: self.pillWidth, contentHeight: self.collapsedOuterHeight)
+            let w = self.pillWidth
+            let h = self.collapsedOuterHeight
+            DispatchQueue.main.async {
+                guard generation == self.collapseGeneration, self.state == .collapsed else { return }
+                if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
+                    window.resizeToFitCollapse(contentWidth: w, contentHeight: h)
+                }
+                self.collapseAnimating = false
             }
-            self.collapseAnimating = false
         }
     }
 
@@ -265,8 +283,11 @@ struct NotchContentView: View {
             let listH = min(CGFloat(count) * 80 + 30, 480)
             w = 420
             h = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
-        case .permission:
-            w = 440; h = expandedHeight + 8
+        case .permission(let id):
+            // Must not use `expandedHeight` here: `expand(to:)` runs before `state` updates, so
+            // `expandedHeight` would still reflect `.collapsed` (0) and resize the window to ~8pt tall.
+            w = 440
+            h = permissionExpandedTotalHeight(sessionId: id) + 8
         case .question(let id):
             let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 4
             let contentH: CGFloat = 120 + CGFloat(max(optionCount, 2)) * 42
