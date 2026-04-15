@@ -29,7 +29,8 @@ struct CollapsedPillView: View {
             Spacer(minLength: 6)
             activeCountLabel
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
     }
 
     private var unobscuredCenteredIcons: some View {
@@ -102,7 +103,7 @@ struct CollapsedPillView: View {
                 .foregroundStyle(.white.opacity(0.92))
                 .monospacedDigit()
             Text("active")
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white.opacity(0.38))
         }
         .accessibilityLabel("\(n) active agents")
