@@ -24,6 +24,7 @@ enum ZeroConfigManager {
         case .codex: configureCodex()
         case .geminiCli: configureGeminiCli()
         case .cursor: configureCursor()
+        case .trae: configureCursor()
         case .openCode: configureOpenCode()
         case .droid: configureDroid()
         case .qoder: configureQoder()
@@ -74,18 +75,21 @@ enum ZeroConfigManager {
             }
         }
 
-        // Check Cursor hooks
-        let cursorHooks = "\(home)/.cursor/hooks.json"
-        if isAutoConfigEnabled(for: .cursor), FileManager.default.fileExists(atPath: cursorHooks) {
-            if let config = readJSON(cursorHooks),
-               let hooks = config["hooks"] as? [String: Any] {
-                let hasDIBridge = hooks.values.contains { entries in
-                    guard let list = entries as? [[String: Any]] else { return false }
-                    return list.contains { ($0["command"] as? String)?.contains("di-bridge") == true }
-                }
-                if !hasDIBridge {
-                    configureCursor()
-                    print("[ZeroConfig] Repaired Cursor hooks")
+        // Check Cursor-family hooks (Cursor / Trae / Trae CN)
+        if isAutoConfigEnabled(for: .cursor) || isAutoConfigEnabled(for: .trae) {
+            for hooksPath in cursorHookPaths {
+                guard FileManager.default.fileExists(atPath: hooksPath) else { continue }
+                if let config = readJSON(hooksPath),
+                   let hooks = config["hooks"] as? [String: Any] {
+                    let hasDIBridge = hooks.values.contains { entries in
+                        guard let list = entries as? [[String: Any]] else { return false }
+                        return list.contains { ($0["command"] as? String)?.contains("di-bridge") == true }
+                    }
+                    if !hasDIBridge {
+                        configureCursor()
+                        print("[ZeroConfig] Repaired Cursor-family hooks at \(hooksPath)")
+                        break
+                    }
                 }
             }
         }
@@ -279,13 +283,14 @@ enum ZeroConfigManager {
     // MARK: - Cursor
 
     private static func configureCursor() {
-        let configDir = "\(home)/.cursor"
-        let hooksPath = "\(configDir)/hooks.json"
-        ensureDir(configDir)
+        for hooksPath in cursorHookPaths {
+            ensureDir((hooksPath as NSString).deletingLastPathComponent)
+            let config = readJSON(hooksPath) ?? [String: Any]()
+            let updatedConfig = sanitizeCursorConfig(config, bridgePath: bridgePath)
+            writeJSON(hooksPath, updatedConfig)
+        }
 
-        let config = readJSON(hooksPath) ?? [String: Any]()
-        let updatedConfig = sanitizeCursorConfig(config, bridgePath: bridgePath)
-        writeJSON(hooksPath, updatedConfig)
+        configureTraeIDEClaudeCodeHooks()
     }
 
     static func sanitizeCursorConfig(_ config: [String: Any], bridgePath: String) -> [String: Any] {
@@ -327,6 +332,66 @@ enum ZeroConfigManager {
         config["hooks"] = hooks
         if config["version"] == nil { config["version"] = 1 }
         return config
+    }
+
+    private static func configureTraeIDEClaudeCodeHooks() {
+        for settingsPath in traeIDESettingsPaths where FileManager.default.fileExists(atPath: settingsPath) {
+            let config = readJSON(settingsPath) ?? [String: Any]()
+            let hooks = config["claudeCode.hooks"] as? [String: Any] ?? [:]
+            var updatedConfig = config
+            updatedConfig["claudeCode.hooks"] = sanitizeClaudeCodeHooksForIDE(
+                hooks,
+                bridgePath: bridgePath,
+                agent: AgentType.cursor.rawValue
+            )
+            writeJSON(settingsPath, updatedConfig)
+        }
+    }
+
+    static func sanitizeClaudeCodeHooksForIDE(_ hooks: [String: Any], bridgePath: String, agent: String) -> [String: Any] {
+        var hooks = hooks
+
+        let hookMapping: [(String, String, Int)] = [
+            ("PreToolUse", "PreToolUse", 5),
+            ("PostToolUse", "PostToolUse", 5),
+            ("PreCompact", "compact", 5),
+            ("Notification", "Notification", 5),
+            ("PermissionRequest", "PermissionRequest", 300),
+            ("Stop", "session_end", 5),
+            ("SessionStart", "session_start", 5),
+            ("SessionEnd", "session_end", 5),
+            ("SubagentStart", "subagent_start", 5),
+            ("SubagentStop", "subagent_end", 5),
+            ("UserPromptSubmit", "session_start", 5)
+        ]
+
+        for (hookType, hookArg, timeout) in hookMapping {
+            var entries = hooks[hookType] as? [[String: Any]] ?? []
+            entries.removeAll { entry in
+                let commands = entry["hooks"] as? [[String: Any]] ?? []
+                return commands.contains { ($0["command"] as? String)?.contains("di-bridge") == true }
+            }
+
+            let command: String
+            if hookArg == "PermissionRequest" {
+                command = "\(bridgePath) --agent \(agent) --hook \(hookArg)"
+            } else {
+                command = "\(bridgePath) --agent \(agent) --hook \(hookArg) || true"
+            }
+
+            entries.append([
+                "matcher": "*",
+                "hooks": [[
+                    "type": "command",
+                    "command": command,
+                    "timeout": timeout
+                ]]
+            ])
+
+            hooks[hookType] = entries
+        }
+
+        return hooks
     }
 
     private static func isLegacyCursorHookCommand(_ command: String?) -> Bool {
@@ -400,12 +465,27 @@ enum ZeroConfigManager {
             }
             if (t === "permission.asked" && p.id && p.sessionID) {
               const rid = p.id, sid = `opencode-${p.sessionID}`;
-              const tn = (p.permission||"unknown").charAt(0).toUpperCase()+(p.permission||"unknown").slice(1);
+              const permRaw = (p.permission||"unknown");
+              const perm = permRaw.toLowerCase();
+              const tn = permRaw.charAt(0).toUpperCase()+permRaw.slice(1);
               const pts = p.patterns||[];
               let desc = tn;
               if (p.permission==="bash"&&pts.length) desc = "Run: "+pts.join(" && ");
               else if ((p.permission==="edit"||p.permission==="write")&&pts.length) desc = tn+": "+pts[0];
               else if (pts.length) desc = tn+": "+pts.join(", ");
+              const questionLike = perm.includes("ask") || perm.includes("question") || perm.includes("input");
+              if (questionLike) {
+                const opts = pts.filter(Boolean).map(String);
+                if (internalFetch) {
+                  sendInteractive("question", sid, { question: desc || "Question", options: opts });
+                } else {
+                  sendViaBridge("question", sid, { question: desc || "Question", options: opts });
+                }
+                return;
+              }
+              if ((perm === "unknown" || perm === "") && !pts.length) {
+                return;
+              }
               if (internalFetch) {
                 sendInteractive("PermissionRequest", sid, { tool_name:tn, description:desc, file_path:pts[0]||"" })
                   .then(async (r)=>{ if(!r)return; try{ await internalFetch(new Request(`http://localhost:${serverPort}/permission/${rid}/reply`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reply:r.exitCode===0?"once":"reject"})}));}catch{} });
@@ -583,6 +663,21 @@ enum ZeroConfigManager {
         autoConfigKeyPrefix + agent.rawValue
     }
 
+    private static var cursorHookPaths: [String] {
+        [
+            "\(home)/.cursor/hooks.json",
+            "\(home)/.trae/hooks.json",
+            "\(home)/.trae-cn/hooks.json"
+        ]
+    }
+
+    private static var traeIDESettingsPaths: [String] {
+        [
+            "\(home)/Library/Application Support/Trae/User/settings.json",
+            "\(home)/Library/Application Support/Trae CN/User/settings.json"
+        ]
+    }
+
     private static func hasConfiguration(for agent: AgentType) -> Bool {
         switch agent {
         case .claudeCode:
@@ -596,10 +691,14 @@ enum ZeroConfigManager {
                   let hooks = config["hooks"] as? [String: Any] else { return false }
             return hooksContainBridge(hooks)
         case .cursor:
-            let path = "\(home)/.cursor/hooks.json"
-            guard let config = readJSON(path),
-                  let hooks = config["hooks"] as? [String: Any] else { return false }
-            return hooksContainBridge(hooks)
+            for path in cursorHookPaths {
+                guard let config = readJSON(path),
+                      let hooks = config["hooks"] as? [String: Any] else { continue }
+                if hooksContainBridge(hooks) { return true }
+            }
+            return false
+        case .trae:
+            return hasConfiguration(for: .cursor)
         case .openCode:
             let path = "\(home)/.config/opencode/plugins/tower-island.js"
             guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
@@ -629,7 +728,11 @@ enum ZeroConfigManager {
         case .codex:
             removeBridgeHooks(at: "\(home)/.codex/hooks.json")
         case .cursor:
-            removeCursorBridgeHooks(at: "\(home)/.cursor/hooks.json")
+            for path in cursorHookPaths {
+                removeCursorBridgeHooks(at: path)
+            }
+        case .trae:
+            removeConfiguration(for: .cursor)
         case .openCode:
             try? FileManager.default.removeItem(atPath: "\(home)/.config/opencode/plugins/tower-island.js")
         case .geminiCli:

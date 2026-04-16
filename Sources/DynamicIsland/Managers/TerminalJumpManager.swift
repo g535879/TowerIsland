@@ -10,6 +10,8 @@ enum TerminalApp: String, CaseIterable {
     case vscode = "Visual Studio Code"
     case cursor = "Cursor"
     case windsurf = "Windsurf"
+    case trae = "Trae"
+    case traeCn = "Trae CN"
     case codex = "Codex"
 
     var bundleId: String {
@@ -23,6 +25,8 @@ enum TerminalApp: String, CaseIterable {
         case .vscode: "com.microsoft.VSCode"
         case .cursor: "com.todesktop.230313mzl4w4u92"
         case .windsurf: "com.codeium.windsurf"
+        case .trae: "com.trae.app"
+        case .traeCn: "cn.trae.app"
         case .codex: "com.openai.codex"
         }
     }
@@ -38,21 +42,50 @@ enum TerminalApp: String, CaseIterable {
         case .vscode: ["visual studio code", "vscode", "code"]
         case .cursor: ["cursor"]
         case .windsurf: ["windsurf"]
+        case .trae: ["trae"]
+        case .traeCn: ["trae cn", "trae-cn", "traecn"]
         case .codex: ["codex"]
         }
     }
 
-    static func detect(from name: String) -> TerminalApp? {
-        let lower = name.lowercased()
-        return allCases.first { app in
-            app.aliases.contains(where: { lower.contains($0) })
-                || lower.contains(app.bundleId.lowercased())
+    var isVSCodeFamily: Bool {
+        switch self {
+        case .vscode, .cursor, .windsurf, .trae, .traeCn:
+            true
+        default:
+            false
         }
+    }
+
+    static func detect(from name: String) -> TerminalApp? {
+        let lower = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let exact = allCases.first(where: {
+            $0.bundleId.lowercased() == lower || $0.aliases.contains(lower)
+        }) {
+            return exact
+        }
+
+        if let byBundle = allCases.first(where: { lower.contains($0.bundleId.lowercased()) }) {
+            return byBundle
+        }
+
+        let aliasMatches: [(app: TerminalApp, score: Int)] = allCases.compactMap { app in
+            let longestAlias = app.aliases
+                .filter { lower.contains($0) }
+                .map(\.count)
+                .max() ?? 0
+            guard longestAlias > 0 else { return nil }
+            return (app, longestAlias)
+        }
+
+        return aliasMatches.sorted(by: { $0.score > $1.score }).first?.app
     }
 
     static func forAgent(_ agentType: AgentType) -> TerminalApp? {
         switch agentType {
         case .cursor: return .cursor
+        case .trae: return .trae
         case .codex: return .codex
         case .copilot: return .vscode
         case .claudeCode, .geminiCli, .openCode, .droid, .qoder, .codeBuddy:
@@ -63,22 +96,77 @@ enum TerminalApp: String, CaseIterable {
 
 enum TerminalJumpManager {
     static func jump(to session: AgentSession) {
-        let targetApp: TerminalApp? = TerminalApp.forAgent(session.agentType)
-            ?? (session.terminal.isEmpty ? nil : TerminalApp.detect(from: session.terminal))
+        let targetApp = resolveTargetApp(for: session)
+
+        if session.agentType == .cursor {
+            let preferredApp = (targetApp == .windsurf) ? TerminalApp.windsurf : TerminalApp.cursor
+            if raiseMatchingWindow(session: session, bundleId: preferredApp.bundleId, allowFallbackActivate: false) {
+                return
+            }
+            if raiseAllCursorWindows(preferredBundleId: preferredApp.bundleId) {
+                return
+            }
+            if !session.workingDirectory.isEmpty,
+               openWorkspaceWindow(app: preferredApp, workingDirectory: session.workingDirectory) {
+                return
+            }
+            activateApp(preferredApp)
+            return
+        }
 
         if let app = targetApp {
             if let tsid = session.termSessionId, !tsid.isEmpty, app == .iterm2 {
                 jumpToITermSession(termSessionId: tsid)
                 return
             }
-            if raiseMatchingWindow(session: session, bundleId: app.bundleId) {
+
+            if app.isVSCodeFamily && !session.workingDirectory.isEmpty {
+                if raiseMatchingWindow(session: session, bundleId: app.bundleId, allowFallbackActivate: false) {
+                    return
+                }
+                if app == .cursor, raiseAllWindows(bundleId: app.bundleId) {
+                    return
+                }
+                if openWorkspaceWindow(app: app, workingDirectory: session.workingDirectory) {
+                    return
+                }
+                activateApp(app)
+                return
+            } else {
+                if raiseMatchingWindow(session: session, bundleId: app.bundleId) {
+                    return
+                }
+                activateApp(app)
                 return
             }
-            activateApp(app)
-            return
         }
 
         activateByAgentName(session.agentType)
+    }
+
+    static func resolveTargetApp(for session: AgentSession) -> TerminalApp? {
+        let appFromTerminal: TerminalApp? = session.terminal.isEmpty ? nil : TerminalApp.detect(from: session.terminal)
+        let appFromAgent = TerminalApp.forAgent(session.agentType)
+
+        if session.agentType == .cursor {
+            if let appFromTerminal, appFromTerminal == .cursor || appFromTerminal == .windsurf {
+                return appFromTerminal
+            }
+            return .cursor
+        }
+
+        if session.agentType == .trae {
+            if let appFromTerminal, appFromTerminal == .trae || appFromTerminal == .traeCn {
+                return appFromTerminal
+            }
+            return .trae
+        }
+
+        if appFromTerminal == .terminal {
+            return appFromAgent
+        }
+
+        return appFromTerminal ?? appFromAgent
     }
 
     private static func jumpToITermSession(termSessionId: String) {
@@ -121,7 +209,7 @@ enum TerminalJumpManager {
         runAppleScript(script)
     }
 
-    private static func raiseMatchingWindow(session: AgentSession, bundleId: String) -> Bool {
+    private static func raiseMatchingWindow(session: AgentSession, bundleId: String, allowFallbackActivate: Bool = true) -> Bool {
         guard let runningApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first else {
             return false
         }
@@ -130,8 +218,11 @@ enum TerminalJumpManager {
         var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, "AXWindows" as CFString, &windowsRef) == .success,
               let windows = windowsRef as? [AXUIElement] else {
-            runningApp.activate()
-            return true
+            if allowFallbackActivate {
+                runningApp.activate()
+                return true
+            }
+            return false
         }
 
         if let targetWid = session.windowNumber {
@@ -160,8 +251,49 @@ enum TerminalJumpManager {
             }
         }
 
+        if allowFallbackActivate {
+            runningApp.activate()
+            return true
+        }
+        return false
+    }
+
+    private static func raiseAllWindows(bundleId: String) -> Bool {
+        guard let runningApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first else {
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(runningApp.processIdentifier)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, "AXWindows" as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement], !windows.isEmpty else {
+            runningApp.activate()
+            return true
+        }
+
+        for window in windows {
+            AXUIElementPerformAction(window, "AXRaise" as CFString)
+        }
         runningApp.activate()
         return true
+    }
+
+    private static func raiseAllCursorWindows(preferredBundleId: String) -> Bool {
+        var bundleIds = [preferredBundleId]
+        if !bundleIds.contains(TerminalApp.cursor.bundleId) {
+            bundleIds.append(TerminalApp.cursor.bundleId)
+        }
+        if !bundleIds.contains(TerminalApp.windsurf.bundleId) {
+            bundleIds.append(TerminalApp.windsurf.bundleId)
+        }
+
+        var raised = false
+        for bundleId in bundleIds {
+            if raiseAllWindows(bundleId: bundleId) {
+                raised = true
+            }
+        }
+        return raised
     }
 
     // MARK: - tmux
@@ -197,9 +329,9 @@ enum TerminalJumpManager {
 
     static func captureFrontWindowNumber(for agentType: AgentType, terminal: String) -> Int? {
         let bundleId: String?
-        if let app = TerminalApp.forAgent(agentType) {
+        if !terminal.isEmpty, let app = TerminalApp.detect(from: terminal) {
             bundleId = app.bundleId
-        } else if !terminal.isEmpty, let app = TerminalApp.detect(from: terminal) {
+        } else if let app = TerminalApp.forAgent(agentType) {
             bundleId = app.bundleId
         } else {
             bundleId = nil
@@ -227,6 +359,41 @@ enum TerminalJumpManager {
     private static func activateApp(_ app: TerminalApp) {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleId) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private static func openWorkspaceWindow(app: TerminalApp, workingDirectory: String) -> Bool {
+        let dir = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dir.isEmpty else { return false }
+
+        let commandCandidates: [[String]]
+        switch app {
+        case .vscode:
+            commandCandidates = [["code", "-r"]]
+        case .cursor:
+            commandCandidates = [["cursor", "-r"]]
+        case .windsurf:
+            commandCandidates = [["windsurf", "-r"]]
+        case .trae, .traeCn:
+            commandCandidates = [["trae", "-r"], ["trae-cn", "-r"], ["traecn", "-r"]]
+        default:
+            return false
+        }
+
+        for candidate in commandCandidates {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = candidate + [dir]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                return true
+            } catch {
+                continue
+            }
+        }
+        return false
     }
 
     private static func activateByAgentName(_ agentType: AgentType) {

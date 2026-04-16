@@ -36,4 +36,39 @@ final class ZeroConfigManagerTests: XCTestCase {
         XCTAssertTrue(preToolUse.isEmpty)
         XCTAssertNil(sanitized["dynamic_island"])
     }
+
+    func testSanitizeTraeIDEClaudeHooksAddsBridgeCommands() throws {
+        let hooks: [String: Any] = [
+            "PreToolUse": [
+                [
+                    "matcher": "*",
+                    "hooks": [
+                        [
+                            "type": "command",
+                            "command": "/Users/test/.old/di-bridge --agent cursor --hook PreToolUse"
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let sanitized = ZeroConfigManager.sanitizeClaudeCodeHooksForIDE(
+            hooks,
+            bridgePath: "/Users/test/.tower-island/bin/di-bridge",
+            agent: "cursor"
+        )
+
+        let preToolUse = try XCTUnwrap(sanitized["PreToolUse"] as? [[String: Any]])
+        XCTAssertEqual(preToolUse.count, 1)
+
+        let first = try XCTUnwrap(preToolUse.first)
+        XCTAssertEqual(first["matcher"] as? String, "*")
+        let hookCommands = try XCTUnwrap(first["hooks"] as? [[String: Any]])
+        let command = try XCTUnwrap(hookCommands.first?["command"] as? String)
+        XCTAssertEqual(command, "/Users/test/.tower-island/bin/di-bridge --agent cursor --hook PreToolUse || true")
+
+        XCTAssertNotNil(sanitized["PermissionRequest"])
+        XCTAssertNotNil(sanitized["SessionStart"])
+        XCTAssertNotNil(sanitized["Stop"])
+    }
 }

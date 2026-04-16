@@ -40,7 +40,7 @@ struct NotchContentView: View {
     private var collapsedOuterHeight: CGFloat { collapsedShapeHeight }
 
     private var contentHeight: CGFloat {
-        isExpanded ? expandedHeight + 8 : collapsedOuterHeight
+        isExpanded ? expandedHeight : collapsedOuterHeight
     }
 
     private var expandedWidth: CGFloat {
@@ -58,7 +58,7 @@ struct NotchContentView: View {
         case .expanded:
             let count = manager.visibleSessions.count
             let listH = min(CGFloat(count) * 80 + 30, 480)
-            return Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
+            return Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         case .permission(let id):
             let perm = manager.sessions.first(where: { $0.id == id })?.pendingPermission
             var h: CGFloat = 42 + 1 + 30
@@ -69,12 +69,12 @@ struct NotchContentView: View {
             if hasDesc && hasPath { h += 22 }
             if hasDiff { h += 130 }
             h += 52
-            return min(h, 480)
+            return min(h + Self.expandedPanelBottomInset, 480)
         case .question(let id):
             let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 0
             let baseHeight: CGFloat = 120
             let optionHeight: CGFloat = CGFloat(max(optionCount, 2)) * 42
-            return min(baseHeight + optionHeight, 480)
+            return min(baseHeight + optionHeight + Self.expandedPanelBottomInset, 480)
         case .planReview: return 480
         }
     }
@@ -215,7 +215,7 @@ struct NotchContentView: View {
         if case .expanded = newState {
             let count = manager.visibleSessions.count
             let listH = min(CGFloat(count) * 80 + 30, 480)
-            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
+            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         }
         onSizeChange?(target.width, target.height, true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -266,13 +266,13 @@ struct NotchContentView: View {
             w = 420
             h = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         case .permission:
-            w = 440; h = expandedHeight + 8
+            w = 440; h = expandedHeight
         case .question(let id):
             let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 4
             let contentH: CGFloat = 120 + CGFloat(max(optionCount, 2)) * 42
-            w = 440; h = min(contentH, 480) + 8
+            w = 440; h = min(contentH + Self.expandedPanelBottomInset, 480)
         case .planReview:
-            w = 500; h = 480 + 8
+            w = 500; h = 480
         }
         return (w, h)
     }
@@ -396,7 +396,8 @@ struct NotchContentView: View {
             "com.googlecode.iterm2", "com.apple.Terminal",
             "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
             "net.kovidgoyal.kitty",
-            "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92"
+            "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
+            "com.codeium.windsurf", "com.trae.app", "cn.trae.app"
         ]
         return terminalBundleIds.contains(frontApp.bundleIdentifier ?? "")
     }
@@ -406,12 +407,28 @@ struct NotchContentView: View {
             $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview
         }) else { return }
 
+        let targetState: IslandState
         switch session.status {
-        case .waitingPermission: expand(to: .permission(session.id))
-        case .waitingAnswer: expand(to: .question(session.id))
-        case .waitingPlanReview: expand(to: .planReview(session.id))
-        default: break
+        case .waitingPermission:
+            targetState = .permission(session.id)
+        case .waitingAnswer:
+            targetState = .question(session.id)
+        case .waitingPlanReview:
+            targetState = .planReview(session.id)
+        default:
+            return
         }
+
+        if !isExpanded {
+            expand(to: .expanded)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                guard manager.hasInteraction else { return }
+                expand(to: targetState)
+            }
+            return
+        }
+
+        expand(to: targetState)
     }
 
     private func startHoverPolling() {
