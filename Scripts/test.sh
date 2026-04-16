@@ -67,6 +67,28 @@ check_prereqs() {
         exit 1
     fi
     if [[ ! -S "$SOCK" ]]; then
+        local app_bundle="$PROJECT_DIR/.build/Tower Island.app"
+        local system_app_bundle="/Applications/Tower Island.app"
+        local app_to_open=""
+
+        if [[ -d "$app_bundle" ]]; then
+            app_to_open="$app_bundle"
+        elif [[ -d "$system_app_bundle" ]]; then
+            app_to_open="$system_app_bundle"
+        fi
+
+        if [[ -n "$app_to_open" ]]; then
+            echo -e "${YELLOW}Socket not found at $SOCK; restarting Tower Island...${NC}"
+            pkill -f "TowerIsland" 2>/dev/null || true
+            rm -f "$SOCK"
+            open "$app_to_open" 2>/dev/null || true
+            for _ in {1..50}; do
+                [[ -S "$SOCK" ]] && break
+                sleep 0.2
+            done
+        fi
+    fi
+    if [[ ! -S "$SOCK" ]]; then
         echo -e "${RED}ERROR: Socket not found at $SOCK${NC}"
         echo "Is Tower Island app running?"
         exit 1

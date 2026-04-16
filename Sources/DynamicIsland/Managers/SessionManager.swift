@@ -3,7 +3,6 @@ import Observation
 import AppKit
 import DIShared
 
-
 @Observable
 @MainActor
 final class SessionManager {
