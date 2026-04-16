@@ -190,7 +190,22 @@ enum TerminalJumpManager {
         let appFromAgent = TerminalApp.forAgent(session.agentType)
 
         if session.agentType == .cursor {
-            if let appFromTerminal, appFromTerminal == .cursor || appFromTerminal == .windsurf {
+            if let appFromTerminal {
+                if appFromTerminal == .cursor || appFromTerminal == .windsurf {
+                    return appFromTerminal
+                }
+                if appFromTerminal == .terminal {
+                    if let termSessionId = session.termSessionId, !termSessionId.isEmpty {
+                        return .terminal
+                    }
+                    if session.windowNumber != nil {
+                        return .terminal
+                    }
+                    return .cursor
+                }
+                if appFromTerminal.isVSCodeFamily {
+                    return .cursor
+                }
                 return appFromTerminal
             }
             return .cursor
@@ -204,7 +219,7 @@ enum TerminalJumpManager {
         }
 
         if appFromTerminal == .terminal {
-            return appFromAgent
+            return appFromAgent ?? .terminal
         }
 
         return appFromTerminal ?? appFromAgent

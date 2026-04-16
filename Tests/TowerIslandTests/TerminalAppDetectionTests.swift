@@ -52,7 +52,30 @@ final class TerminalAppDetectionTests: XCTestCase {
         XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .windsurf)
     }
 
-    func testOpenCodeAgentIgnoresGenericTerminalHint() {
+    func testCursorCliInITermPrefersITermJumpTarget() {
+        let session = AgentSession(
+            id: "cursor-4",
+            agentType: .cursor,
+            terminal: "iTerm2",
+            workingDirectory: "/tmp/project"
+        )
+
+        XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .iterm2)
+    }
+
+    func testCursorCliInAppleTerminalWithSessionIdPrefersTerminalJumpTarget() {
+        let session = AgentSession(
+            id: "cursor-5",
+            agentType: .cursor,
+            terminal: "Terminal",
+            workingDirectory: "/tmp/project"
+        )
+        session.termSessionId = "tty:/dev/ttys001"
+
+        XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .terminal)
+    }
+
+    func testOpenCodeAgentFallsBackToTerminalWhenHintIsGeneric() {
         let session = AgentSession(
             id: "opencode-1",
             agentType: .openCode,
@@ -60,7 +83,18 @@ final class TerminalAppDetectionTests: XCTestCase {
             workingDirectory: "/tmp/project"
         )
 
-        XCTAssertNil(TerminalJumpManager.resolveTargetApp(for: session))
+        XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .terminal)
+    }
+
+    func testClaudeCodeAgentFallsBackToTerminalWhenHintIsGeneric() {
+        let session = AgentSession(
+            id: "claude-1",
+            agentType: .claudeCode,
+            terminal: "Terminal",
+            workingDirectory: "/tmp/project"
+        )
+
+        XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .terminal)
     }
 
     func testCodexAgentFallsBackToCodexWhenTerminalHintIsGeneric() {
