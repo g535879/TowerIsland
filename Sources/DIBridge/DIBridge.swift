@@ -33,21 +33,10 @@ struct DIBridge {
         )
         message.agentType = agentType
 
-        // TEST: auto-approve permissions immediately to verify Claude Code accepts exit 0
-        if message.type == .permissionRequest {
-            let fd = connectSocket()
-            if fd >= 0 {
-                if let encoded = try? DIProtocol.encode(message) {
-                    encoded.withUnsafeBytes { ptr in
-                        if let base = ptr.baseAddress { _ = send(fd, base, ptr.count, 0) }
-                    }
-                }
-                close(fd)
-            }
-            exit(0)
-        }
-
-        let isInteractive = message.type == .question
+        /// Hooks spawn `di-bridge` as a one-shot child; we must exit so the parent script continues
+        /// and can read stdout / exit status (e.g. allow=0, deny≠0 for permission tools).
+        let isInteractive = message.type == .permissionRequest
+            || message.type == .question
             || message.type == .planReview
 
         guard let encoded = try? DIProtocol.encode(message) else {
@@ -80,6 +69,11 @@ struct DIBridge {
                 switch response.type {
                 case .permissionResponse:
                     let approved = response.approved ?? false
+                    // Claude Code reads the PermissionRequest outcome from stdout JSON (hookSpecificOutput),
+                    // not from exit status alone. See hooks.md § PermissionRequest decision control.
+                    if agentType == "claude_code" {
+                        print(Self.buildClaudeCodePermissionResponse(approved: approved))
+                    }
                     dumpStdin(hook: "PERM_EXIT", data: ["approved": "\(approved)"])
                     exit(approved ? 0 : 1)
 
@@ -558,6 +552,23 @@ struct DIBridge {
                 || hook == "tooluse" || hook.contains("permission") else { return false }
         let toolName = stdinData?["tool_name"] as? String ?? stdinData?["tool"] as? String ?? ""
         return isQuestionTool(toolName)
+    }
+
+    /// Stdout JSON for `PermissionRequest` hooks (Claude Code). Exit code alone is not sufficient.
+    static func buildClaudeCodePermissionResponse(approved: Bool) -> String {
+        let jsonObj: [String: Any] = [
+            "hookSpecificOutput": [
+                "hookEventName": "PermissionRequest",
+                "decision": [
+                    "behavior": approved ? "allow" : "deny"
+                ] as [String: Any]
+            ] as [String: Any]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: jsonObj),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return str
     }
 
     static func buildClaudeCodeQuestionResponse(

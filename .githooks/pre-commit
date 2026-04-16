@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "[pre-commit] Running full automated test suite..."
+bash Scripts/test-all.sh

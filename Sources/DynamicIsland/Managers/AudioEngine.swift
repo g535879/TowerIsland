@@ -105,7 +105,9 @@ final class AudioEngine {
         queue.async { [weak self] in
             guard let self else { return }
             if let customURL = self.customSounds[event] {
-                self.playFile(customURL)
+                if !self.playFile(customURL) {
+                    self.synthesize(event)
+                }
             } else {
                 self.synthesize(event)
             }
@@ -133,6 +135,8 @@ final class AudioEngine {
         if !customSounds.isEmpty {
             soundPackName = directory.lastPathComponent
             UserDefaults.standard.set(directory.path, forKey: "audio.soundPackPath")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "audio.soundPackPath")
         }
     }
 
@@ -191,13 +195,14 @@ final class AudioEngine {
 
     // MARK: - File Playback
 
-    private func playFile(_ url: URL) {
+    /// Returns false if the file could not be opened or the engine failed so callers can fall back to synthesis.
+    private func playFile(_ url: URL) -> Bool {
         guard let file = try? AVAudioFile(forReading: url) else {
-            return
+            return false
         }
 
         guard let (_, player) = ensureEngine(format: file.processingFormat) else {
-            return
+            return false
         }
 
         player.scheduleFile(file, at: nil, completionHandler: nil)
@@ -205,6 +210,7 @@ final class AudioEngine {
         let duration = Double(file.length) / file.processingFormat.sampleRate
         Thread.sleep(forTimeInterval: duration + 0.15)
         player.stop()
+        return true
     }
 
     // MARK: - 8-bit Synthesis

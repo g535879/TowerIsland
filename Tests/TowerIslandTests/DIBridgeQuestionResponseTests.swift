@@ -54,6 +54,24 @@ final class DIBridgeQuestionResponseTests: XCTestCase {
         XCTAssertEqual(answers["Continue?"], "yes")
     }
 
+    func testClaudePermissionResponseStdoutUsesDecisionBehavior() throws {
+        let allowJson = DIBridge.buildClaudeCodePermissionResponse(approved: true)
+        let denyJson = DIBridge.buildClaudeCodePermissionResponse(approved: false)
+
+        let allowRoot = try decodeJSON(allowJson)
+        let denyRoot = try decodeJSON(denyJson)
+        let allowOut = try hookOutput(from: allowRoot)
+        let denyOut = try hookOutput(from: denyRoot)
+
+        XCTAssertEqual(allowOut["hookEventName"] as? String, "PermissionRequest")
+        XCTAssertEqual(denyOut["hookEventName"] as? String, "PermissionRequest")
+
+        let allowDecision = try XCTUnwrap(allowOut["decision"] as? [String: Any])
+        let denyDecision = try XCTUnwrap(denyOut["decision"] as? [String: Any])
+        XCTAssertEqual(allowDecision["behavior"] as? String, "allow")
+        XCTAssertEqual(denyDecision["behavior"] as? String, "deny")
+    }
+
     func testPermissionHookUsesPermissionRequestEventName() throws {
         let stdin: [String: Any] = [
             "tool_name": "AskUserQuestion",

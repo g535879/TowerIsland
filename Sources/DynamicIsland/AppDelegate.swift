@@ -3,6 +3,15 @@ import Darwin
 import Observation
 import SwiftUI
 
+extension Notification.Name {
+    static let towerIslandShowAboutPane = Notification.Name("TowerIslandShowAboutPane")
+}
+
+enum PreferencesRouting {
+    static let pendingPaneSelectionKey = "TowerIsland.Preferences.PendingPaneSelection"
+    static let aboutPaneValue = "about"
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) var shared: AppDelegate!
@@ -45,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionManager.audioEngine = audioEngine
         setupNotchWindow()
         setupMenuBarItem()
+        DispatchQueue.main.async { [weak self] in
+            self?.installApplicationMenuItems()
+        }
         observeUpdateState()
         startSocketServer()
         sessionManager.startCleanupTimer()
@@ -66,6 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         socketServer?.stop()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        installApplicationMenuItems()
     }
 
     private func setupNotchWindow() {
@@ -127,6 +143,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer?.start()
     }
 
+    private func installApplicationMenuItems() {
+        guard let mainMenu = NSApp.mainMenu,
+              let appMenuItem = mainMenu.items.first,
+              let appSubmenu = appMenuItem.submenu
+        else {
+            return
+        }
+
+        if appSubmenu.items.contains(where: { $0.action == #selector(checkForUpdatesFromMenu) }) {
+            return
+        }
+
+        let settingsIndex = appSubmenu.items.firstIndex(where: { item in
+            item.title.localizedCaseInsensitiveContains("settings")
+        }) ?? 1
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(checkForUpdatesFromMenu),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = self
+        appSubmenu.insertItem(checkForUpdatesItem, at: settingsIndex)
+        appSubmenu.insertItem(NSMenuItem.separator(), at: settingsIndex + 1)
+    }
+
     @objc private func toggleNotch() {
         if let w = notchWindow {
             w.isVisible ? w.orderOut(nil) : w.orderFrontRegardless()
@@ -141,7 +182,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ZeroConfigManager.configureAllAgents()
     }
 
-    @objc private func checkForUpdatesFromMenu() {
+    @objc func checkForUpdatesFromMenu() {
+        UserDefaults.standard.set(
+            PreferencesRouting.aboutPaneValue,
+            forKey: PreferencesRouting.pendingPaneSelectionKey
+        )
+        openPreferences()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .towerIslandShowAboutPane, object: nil)
+        }
         Task { @MainActor in
             await updateManager.checkForUpdates()
         }
@@ -154,6 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openPreferences() {
+        installApplicationMenuItems()
+
         if let w = settingsWindow, w.isVisible {
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)

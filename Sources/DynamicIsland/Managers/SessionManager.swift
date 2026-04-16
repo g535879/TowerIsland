@@ -15,6 +15,11 @@ final class SessionManager {
     private var cleanupTimer: Timer?
     private var workspaceObserver: Any?
 
+    /// Debounces the "Session complete" (`sessionEnd`) chime when assistant text arrives via `statusUpdate`
+    /// (Notification hook) as well as `sessionEnd`, so streaming updates do not spam sounds.
+    private var lastAssistantReplySoundAt: [String: TimeInterval] = [:]
+    private let assistantReplySoundMinInterval: TimeInterval = 1.8
+
     /// Caches the last answer per session so that duplicate follow-up events from
     /// agents like OpenCode (same question, same options, fired within 2 seconds)
     /// are auto-replied without re-showing the question panel.
@@ -273,6 +278,18 @@ final class SessionManager {
         }
     }
 
+    /// Bridges often emit both `cursor-<uuid>` and `claude_code-<uuid>` for one run; keep a single island row.
+    private func mergeAgentTypesForMirror(_ existing: AgentType, _ incoming: AgentType) -> AgentType {
+        if existing == .cursor || incoming == .cursor { return .cursor }
+        return existing
+    }
+
+    /// Returns another session whose id shares the same mirrored suffix (paired hooks).
+    private func sessionMatchingMirroredSuffix(of sessionId: String) -> AgentSession? {
+        guard let suffix = mirroredSessionSuffix(from: sessionId) else { return nil }
+        return sessions.first { mirroredSessionSuffix(from: $0.id) == suffix && $0.id != sessionId }
+    }
+
     func handlePermissionRequest(_ message: DIMessage, respond: @escaping @Sendable (Bool) -> Void) {
         let realAgent = resolvedAgentType(for: message)
 
@@ -432,6 +449,28 @@ final class SessionManager {
             return
         }
 
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            twin.status = .active
+            twin.statusText = ""
+            clearStaleInteraction(twin)
+            if let t = message.terminal, !t.isEmpty { twin.terminal = t }
+            if let w = message.workingDir, !w.isEmpty { twin.workingDirectory = w }
+            if let p = message.prompt, !p.isEmpty {
+                twin.prompt = p
+                twin.chatHistory.append(ChatMessage(timestamp: Date(), role: .user, content: p))
+                audioEngine?.play(.sessionStart)
+            }
+            if let ts = message.termSessionId, !ts.isEmpty { twin.termSessionId = ts }
+            if twin.windowNumber == nil {
+                twin.windowNumber = TerminalJumpManager.captureFrontWindowNumber(
+                    for: twin.agentType, terminal: twin.terminal)
+            }
+            updateTokenUsage(session: twin, message: message)
+            selectedSessionId = twin.id
+            return
+        }
+
         let session = AgentSession(
             id: message.sessionId,
             agentType: agentType,
@@ -454,7 +493,7 @@ final class SessionManager {
     private func endSession(_ message: DIMessage) {
         let agentType = resolvedAgentType(for: message)
 
-        guard let session = sessions.first(where: { $0.id == message.sessionId }) else { return }
+        guard let session = sessionForEndMessage(message) else { return }
         let alreadyCompleted = session.status == .completed
         updateTokenUsage(session: session, message: message)
 
@@ -486,7 +525,7 @@ final class SessionManager {
             markCompleted(session)
         }
         if !alreadyCompleted {
-            audioEngine?.play(.sessionEnd)
+            playAssistantReplySoundDebounced(sessionId: session.id)
         }
 
         if session.status == .completed, selectedSessionId == session.id {
@@ -563,8 +602,27 @@ final class SessionManager {
         } else if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
             session.status = .error
             audioEngine?.play(.error)
+        } else if !text.isEmpty {
+            // Assistant reply via Notification / progress — same chime as session end (user preference: "Session complete").
+            playAssistantReplySoundDebounced(sessionId: session.id)
         }
         updateTokenUsage(session: session, message: message)
+    }
+
+    /// Resolves the session for `sessionEnd` when hooks use `cursor-*` vs `claude_code-*` ids for the same run.
+    private func sessionForEndMessage(_ message: DIMessage) -> AgentSession? {
+        if let s = sessions.first(where: { $0.id == message.sessionId }) {
+            return s
+        }
+        return sessionMatchingMirroredSuffix(of: message.sessionId)
+    }
+
+    private func playAssistantReplySoundDebounced(sessionId: String) {
+        let now = Date().timeIntervalSince1970
+        let last = lastAssistantReplySoundAt[sessionId] ?? 0
+        guard now - last >= assistantReplySoundMinInterval else { return }
+        lastAssistantReplySoundAt[sessionId] = now
+        audioEngine?.play(.sessionEnd)
     }
 
     private func handleSubagentStart(_ message: DIMessage) {
@@ -642,8 +700,7 @@ final class SessionManager {
         if let m = message.model, !m.isEmpty { session.tokenUsage.model = m }
     }
 
-    /// For interactive requests (permission/question/plan), skip parentSession folding
-    /// so the requesting agent keeps its own session and doesn't collide with Cursor activity.
+    /// Interactive requests fold mirrored hook ids (`cursor-*` / `claude_code-*` same suffix) like `findOrCreateSession`.
     private func findOrCreateSessionForInteraction(_ message: DIMessage) -> AgentSession {
         let agentType = resolvedAgentType(for: message)
 
@@ -654,6 +711,11 @@ final class SessionManager {
         if let mirrored = mirroredCursorSession(for: message.sessionId) {
             mirrored.lastActivityTime = Date()
             return mirrored
+        }
+
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            return twin
         }
         if let sameAgent = activeSessions.first(where: { $0.agentType == agentType }) {
             sameAgent.lastActivityTime = Date()
@@ -693,6 +755,12 @@ final class SessionManager {
             completed.lastActivityTime = Date()
             if reactivate { completed.status = .active }
             return completed
+        }
+
+        if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
+            twin.lastActivityTime = Date()
+            if twin.status == .completed, reactivate { twin.status = .active }
+            return twin
         }
 
         let session = AgentSession(

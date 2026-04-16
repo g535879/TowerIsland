@@ -75,8 +75,7 @@ final class UpdateManager {
         return decoder
     }()
 
-    private static let latestReleaseURL = URL(string: "https://api.github.com/repos/g535879/TowerIsland/releases/latest")!
-
+    private static let latestReleaseURL = URL(string: "https://github.com/g535879/TowerIsland/releases/latest")!
     init(
         fetchReleaseData: @escaping ReleaseFetcher = UpdateManager.fetchLatestReleaseData,
         updater: AppUpdater = AppUpdater()
@@ -229,15 +228,53 @@ final class UpdateManager {
         }
     }
 
+    nonisolated static func releaseDataFromLatestRedirectURL(_ finalURL: URL, checkedAt: Date) throws -> Data {
+        let pathComponents = finalURL.pathComponents
+        guard pathComponents.count >= 6,
+              pathComponents[1] == "g535879",
+              pathComponents[2] == "TowerIsland",
+              pathComponents[3] == "releases",
+              pathComponents[4] == "tag"
+        else {
+            throw URLError(.badServerResponse)
+        }
+
+        let tag = pathComponents[5]
+        guard !tag.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
+
+        let dmgURL = URL(string: "https://github.com/g535879/TowerIsland/releases/download")!
+            .appendingPathComponent(tag)
+            .appendingPathComponent("TowerIsland.dmg")
+
+        let payload: [String: Any] = [
+            "tag_name": tag,
+            "html_url": finalURL.absoluteString,
+            "published_at": ISO8601DateFormatter().string(from: checkedAt),
+            "assets": [
+                [
+                    "name": "TowerIsland.dmg",
+                    "browser_download_url": dmgURL.absoluteString
+                ]
+            ]
+        ]
+
+        return try JSONSerialization.data(withJSONObject: payload)
+    }
+
     private static func fetchLatestReleaseData() async throws -> Data {
         var request = URLRequest(url: latestReleaseURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.httpMethod = "HEAD"
         request.setValue("TowerIsland", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        return data
+        guard let finalURL = response.url else {
+            throw URLError(.badServerResponse)
+        }
+        return try releaseDataFromLatestRedirectURL(finalURL, checkedAt: Date())
     }
 }

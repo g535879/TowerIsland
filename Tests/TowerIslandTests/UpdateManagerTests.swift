@@ -48,6 +48,21 @@ final class UpdateManagerTests: XCTestCase {
         }
     }
 
+    actor FetchSequence {
+        private var queue: [Result<Data, Error>]
+
+        init(_ queue: [Result<Data, Error>]) {
+            self.queue = queue
+        }
+
+        func next() throws -> Data {
+            guard !queue.isEmpty else {
+                throw URLError(.unknown)
+            }
+            return try queue.removeFirst().get()
+        }
+    }
+
     @MainActor
     private func waitForState(
         _ expectedState: UpdateManager.State,
@@ -332,6 +347,34 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertNotNil(manager.lastCheckedAt)
     }
 
+    @MainActor
+    func testCheckForUpdatesRecoversAfterTransientFailure() async {
+        let currentVersion = UpdateManager().currentVersion
+        let successData = #"{"tag_name":"v\#(currentVersion)","html_url":"https://example.com/release","published_at":"2026-04-15T07:00:00Z","assets":[{"name":"TowerIsland.dmg","browser_download_url":"https://example.com/TowerIsland.dmg"}]}"#
+            .data(using: .utf8)!
+        let sequence = FetchSequence([
+            .failure(URLError(.cannotConnectToHost)),
+            .success(successData)
+        ])
+        let manager = UpdateManager(fetchReleaseData: {
+            try await sequence.next()
+        })
+
+        await manager.checkForUpdates()
+        if case .failed(let message) = manager.state {
+            XCTAssertEqual(message, "Unable to check for updates.")
+        } else {
+            XCTFail("Expected first check to fail for transient network error")
+        }
+        XCTAssertNil(manager.latestRelease)
+        XCTAssertNotNil(manager.lastCheckedAt)
+
+        await manager.checkForUpdates()
+        XCTAssertEqual(manager.state, .upToDate)
+        XCTAssertEqual(manager.latestRelease?.tagName, "v\(currentVersion)")
+        XCTAssertNotNil(manager.lastCheckedAt)
+    }
+
     func testNormalizesReleaseTagsByRemovingLeadingV() {
         XCTAssertEqual(UpdateManager.normalize(version: " v1.2.3 "), "1.2.3")
         XCTAssertEqual(UpdateManager.normalize(version: "V2.0.0"), "2.0.0")
@@ -373,5 +416,49 @@ final class UpdateManagerTests: XCTestCase {
     func testTreatsWhitespaceOnlyVersionsAsNotNewer() {
         XCTAssertFalse(UpdateManager.isRemoteVersionNewer("   ", than: "1.0.0"))
         XCTAssertFalse(UpdateManager.isRemoteVersionNewer("1.0.1", than: "   "))
+    }
+
+    @MainActor
+    func testBuildsReleasePayloadFromLatestRedirectURL() throws {
+        let checkedAt = ISO8601DateFormatter().date(from: "2026-04-15T06:42:03Z")!
+        let payload = try UpdateManager.releaseDataFromLatestRedirectURL(
+            URL(string: "https://github.com/g535879/TowerIsland/releases/tag/v1.2.8")!,
+            checkedAt: checkedAt
+        )
+        let release = try UpdateManager.githubReleaseDecoder.decode(UpdateManager.ReleaseInfo.self, from: payload)
+
+        XCTAssertEqual(release.tagName, "v1.2.8")
+        XCTAssertEqual(release.htmlURL, URL(string: "https://github.com/g535879/TowerIsland/releases/tag/v1.2.8"))
+        XCTAssertEqual(release.publishedAt, checkedAt)
+        XCTAssertEqual(
+            release.dmgURL,
+            URL(string: "https://github.com/g535879/TowerIsland/releases/download/v1.2.8/TowerIsland.dmg")
+        )
+    }
+
+    @MainActor
+    func testRejectsUnexpectedLatestRedirectURL() {
+        XCTAssertThrowsError(
+            try UpdateManager.releaseDataFromLatestRedirectURL(
+                URL(string: "https://github.com/g535879/TowerIsland/releases")!,
+                checkedAt: Date()
+            )
+        )
+    }
+
+    @MainActor
+    func testBuildsReleasePayloadFromLatestRedirectURLWithQueryString() throws {
+        let checkedAt = ISO8601DateFormatter().date(from: "2026-04-15T07:30:00Z")!
+        let payload = try UpdateManager.releaseDataFromLatestRedirectURL(
+            URL(string: "https://github.com/g535879/TowerIsland/releases/tag/v1.2.9?from=latest")!,
+            checkedAt: checkedAt
+        )
+        let release = try UpdateManager.githubReleaseDecoder.decode(UpdateManager.ReleaseInfo.self, from: payload)
+
+        XCTAssertEqual(release.tagName, "v1.2.9")
+        XCTAssertEqual(
+            release.dmgURL,
+            URL(string: "https://github.com/g535879/TowerIsland/releases/download/v1.2.9/TowerIsland.dmg")
+        )
     }
 }

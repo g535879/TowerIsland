@@ -60,23 +60,39 @@ struct NotchContentView: View {
             let listH = min(CGFloat(count) * 80 + 30, 480)
             return Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         case .permission(let id):
-            let perm = manager.sessions.first(where: { $0.id == id })?.pendingPermission
-            var h: CGFloat = 42 + 1 + 30
-            let hasDesc = perm != nil && !perm!.description.isEmpty
-            let hasPath = perm?.filePath.map { !$0.isEmpty } ?? false
-            let hasDiff = perm?.diff.map { !$0.isEmpty } ?? false
-            h += hasDesc ? 52 : (hasPath ? 52 : 0)
-            if hasDesc && hasPath { h += 22 }
-            if hasDiff { h += 130 }
-            h += 52
-            return min(h + Self.expandedPanelBottomInset, 480)
+            return permissionExpandedTotalHeight(sessionId: id)
         case .question(let id):
-            let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 0
-            let baseHeight: CGFloat = 120
-            let optionHeight: CGFloat = CGFloat(max(optionCount, 2)) * 42
-            return min(baseHeight + optionHeight + Self.expandedPanelBottomInset, 480)
+            return questionExpandedTotalHeight(sessionId: id)
         case .planReview: return 480
         }
+    }
+
+    /// Permission card body only (matches `PermissionApprovalView` layout estimate).
+    private func permissionCardInnerHeight(sessionId: String) -> CGFloat {
+        let perm = manager.sessions.first(where: { $0.id == sessionId })?.pendingPermission
+        var h: CGFloat = 42 + 1 + 30
+        let hasDesc = perm != nil && !perm!.description.isEmpty
+        let hasPath = perm?.filePath.map { !$0.isEmpty } ?? false
+        let hasDiff = perm?.diff.map { !$0.isEmpty } ?? false
+        h += hasDesc ? 52 : (hasPath ? 52 : 0)
+        if hasDesc && hasPath { h += 22 }
+        if hasDiff { h += 130 }
+        h += 52
+        return min(h, 480)
+    }
+
+    /// Full expanded height for permission mode: island toolbar + card + bottom inset (same as session list layout).
+    private func permissionExpandedTotalHeight(sessionId: String) -> CGFloat {
+        let inner = permissionCardInnerHeight(sessionId: sessionId)
+        return inner + Self.expandedPanelHeaderHeight + Self.expandedPanelBottomInset
+    }
+
+    /// Full expanded height for question mode: island toolbar + question card + bottom inset.
+    private func questionExpandedTotalHeight(sessionId: String) -> CGFloat {
+        let optionCount = manager.sessions.first(where: { $0.id == sessionId })?.pendingQuestion?.options.count ?? 0
+        let questionInnerHeight: CGFloat = min(120 + CGFloat(max(optionCount, 2)) * 42, 480)
+        let total = questionInnerHeight + Self.expandedPanelHeaderHeight + Self.expandedPanelBottomInset
+        return min(total, 480)
     }
 
     private var shapeWidth: CGFloat {
@@ -239,12 +255,19 @@ struct NotchContentView: View {
             showContent = false
             state = .collapsed
         }
+        // Defer NSWindow frame sync to the next main runloop turn so we are not inside SwiftUI's
+        // animation/layout commit (reduces AppKit exceptions in _reallySetFrame: during collapse).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             guard generation == self.collapseGeneration, self.state == .collapsed else { return }
-            if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
-                window.resizeToFitCollapse(contentWidth: self.pillWidth, contentHeight: self.collapsedOuterHeight)
+            let w = self.pillWidth
+            let h = self.collapsedOuterHeight
+            DispatchQueue.main.async {
+                guard generation == self.collapseGeneration, self.state == .collapsed else { return }
+                if let window = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
+                    window.resizeToFitCollapse(contentWidth: w, contentHeight: h)
+                }
+                self.collapseAnimating = false
             }
-            self.collapseAnimating = false
         }
     }
 
@@ -265,12 +288,14 @@ struct NotchContentView: View {
             let listH = min(CGFloat(count) * 80 + 30, 480)
             w = 420
             h = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
-        case .permission:
-            w = 440; h = expandedHeight
+        case .permission(let id):
+            // Must not use `expandedHeight` here: `expand(to:)` runs before `state` updates, so
+            // `expandedHeight` would still reflect `.collapsed` (0) and resize the window to ~8pt tall.
+            w = 440
+            h = permissionExpandedTotalHeight(sessionId: id) + 8
         case .question(let id):
-            let optionCount = manager.sessions.first(where: { $0.id == id })?.pendingQuestion?.options.count ?? 4
-            let contentH: CGFloat = 120 + CGFloat(max(optionCount, 2)) * 42
-            w = 440; h = min(contentH + Self.expandedPanelBottomInset, 480)
+            w = 440
+            h = questionExpandedTotalHeight(sessionId: id) + 8
         case .planReview:
             w = 500; h = 480
         }
@@ -367,9 +392,19 @@ struct NotchContentView: View {
 
             Spacer()
 
-            Text("\(manager.activeSessions.count) active")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.3))
+            Group {
+                if let session = interactionSession {
+                    Text(session.displayTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    Text("\(manager.activeSessions.count) active")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+            }
 
             Button {
                 expandedByHover = false
@@ -384,6 +419,15 @@ struct NotchContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private var interactionSession: AgentSession? {
+        switch state {
+        case .permission(let id), .question(let id), .planReview(let id):
+            return manager.sessions.first(where: { $0.id == id })
+        case .collapsed, .expanded:
+            return nil
+        }
     }
 
     private func openSettingsWindow() {
