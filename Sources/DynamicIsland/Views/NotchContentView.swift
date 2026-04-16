@@ -23,6 +23,9 @@ struct NotchContentView: View {
     @State private var expandPending = false
     @State private var collapseAnimating = false
     @State private var collapseGeneration = 0
+    @State private var expandedAutoHideWorkItem: DispatchWorkItem?
+    @State private var lastExpandedInteractionAt: Date = .distantPast
+    @State private var lastExpandedInteractionMarkAt: Date = .distantPast
     /// Last known expanded `shapeHeight` (black panel), used to interpolate notch corner radii with `shapeHeight` during spring (avoids boolean snap).
     @State private var cachedExpandedShapeHeight: CGFloat = 220
     @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 3.0
@@ -40,7 +43,7 @@ struct NotchContentView: View {
     private var collapsedOuterHeight: CGFloat { collapsedShapeHeight }
 
     private var contentHeight: CGFloat {
-        isExpanded ? expandedHeight + 8 : collapsedOuterHeight
+        isExpanded ? expandedHeight : collapsedOuterHeight
     }
 
     private var expandedWidth: CGFloat {
@@ -58,7 +61,7 @@ struct NotchContentView: View {
         case .expanded:
             let count = manager.visibleSessions.count
             let listH = min(CGFloat(count) * 80 + 30, 480)
-            return Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
+            return Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         case .permission(let id):
             return permissionExpandedTotalHeight(sessionId: id)
         case .question(let id):
@@ -126,6 +129,7 @@ struct NotchContentView: View {
     private static let expandSpring = Animation.spring(response: 0.4, dampingFraction: 0.82)
     private static let collapseSpring = Animation.spring(response: 0.35, dampingFraction: 0.8)
     private static let contentFade = Animation.easeInOut(duration: 0.2)
+    private static let expandedInactivityAutoHideDelay: TimeInterval = 10
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -178,6 +182,13 @@ struct NotchContentView: View {
                 cachedExpandedShapeHeight = max(collapsedShapeHeight + 1, expandedHeight)
             }
         }
+        .onChange(of: state) { _, newState in
+            if newState == .collapsed {
+                cancelExpandedAutoHide()
+            } else {
+                markExpandedInteraction()
+            }
+        }
         .onChange(of: manager.activeSessions.count) { _, _ in
             reportSize()
         }
@@ -201,6 +212,9 @@ struct NotchContentView: View {
             }
             reportSize()
             startHoverPolling()
+        }
+        .onDisappear {
+            cancelExpandedAutoHide()
         }
         .onChange(of: manager.hasInteraction) { _, hasInteraction in
             if hasInteraction {
@@ -231,7 +245,7 @@ struct NotchContentView: View {
         if case .expanded = newState {
             let count = manager.visibleSessions.count
             let listH = min(CGFloat(count) * 80 + 30, 480)
-            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
+            cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + Self.expandedPanelBottomInset
         }
         onSizeChange?(target.width, target.height, true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -297,7 +311,7 @@ struct NotchContentView: View {
             w = 440
             h = questionExpandedTotalHeight(sessionId: id) + 8
         case .planReview:
-            w = 500; h = 480 + 8
+            w = 500; h = 480
         }
         return (w, h)
     }
@@ -362,14 +376,21 @@ struct NotchContentView: View {
             }
         }
         .padding(.bottom, Self.expandedPanelBottomInset)
+        .simultaneousGesture(TapGesture().onEnded {
+            markExpandedInteraction()
+        })
+        .simultaneousGesture(DragGesture(minimumDistance: 1).onChanged { _ in
+            markExpandedInteraction(throttled: true)
+        })
     }
 
     private var expandedHeader: some View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
-                Button {
-                    audio.isMuted.toggle()
-                } label: {
+            Button {
+                markExpandedInteraction()
+                audio.isMuted.toggle()
+            } label: {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(audio.isMuted ? .white.opacity(0.25) : .white.opacity(0.72))
@@ -378,9 +399,10 @@ struct NotchContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    openSettingsWindow()
-                } label: {
+            Button {
+                markExpandedInteraction()
+                openSettingsWindow()
+            } label: {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.62))
@@ -407,6 +429,7 @@ struct NotchContentView: View {
             }
 
             Button {
+                markExpandedInteraction()
                 expandedByHover = false
                 collapse()
             } label: {
@@ -440,7 +463,8 @@ struct NotchContentView: View {
             "com.googlecode.iterm2", "com.apple.Terminal",
             "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
             "net.kovidgoyal.kitty",
-            "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92"
+            "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
+            "com.codeium.windsurf", "com.trae.app", "cn.trae.app"
         ]
         return terminalBundleIds.contains(frontApp.bundleIdentifier ?? "")
     }
@@ -450,12 +474,63 @@ struct NotchContentView: View {
             $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview
         }) else { return }
 
+        let targetState: IslandState
         switch session.status {
-        case .waitingPermission: expand(to: .permission(session.id))
-        case .waitingAnswer: expand(to: .question(session.id))
-        case .waitingPlanReview: expand(to: .planReview(session.id))
-        default: break
+        case .waitingPermission:
+            targetState = .permission(session.id)
+        case .waitingAnswer:
+            targetState = .question(session.id)
+        case .waitingPlanReview:
+            targetState = .planReview(session.id)
+        default:
+            return
         }
+
+        if !isExpanded {
+            expand(to: .expanded)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                guard manager.hasInteraction else { return }
+                expand(to: targetState)
+            }
+            return
+        }
+
+        expand(to: targetState)
+    }
+
+    private func cancelExpandedAutoHide() {
+        expandedAutoHideWorkItem?.cancel()
+        expandedAutoHideWorkItem = nil
+    }
+
+    private func markExpandedInteraction(throttled: Bool = false) {
+        guard isExpanded else { return }
+
+        let now = Date()
+        if throttled, now.timeIntervalSince(lastExpandedInteractionMarkAt) < 0.4 {
+            return
+        }
+        lastExpandedInteractionMarkAt = now
+        lastExpandedInteractionAt = now
+        scheduleExpandedAutoHide()
+    }
+
+    private func scheduleExpandedAutoHide() {
+        cancelExpandedAutoHide()
+        guard isExpanded else { return }
+
+        let workItem = DispatchWorkItem {
+            guard self.isExpanded else { return }
+            let elapsed = Date().timeIntervalSince(self.lastExpandedInteractionAt)
+            guard elapsed >= Self.expandedInactivityAutoHideDelay else {
+                self.scheduleExpandedAutoHide()
+                return
+            }
+            self.expandedByHover = false
+            self.collapse()
+        }
+        expandedAutoHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.expandedInactivityAutoHideDelay, execute: workItem)
     }
 
     private func startHoverPolling() {

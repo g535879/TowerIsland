@@ -242,6 +242,12 @@ struct PreferencesView: View {
                     ideRow(name: "VS Code", bundleId: "com.microsoft.VSCode")
                     dividerLine
                     ideRow(name: "Cursor", bundleId: "com.todesktop.230313mzl4w4u92")
+                    dividerLine
+                    ideRow(name: "Windsurf", bundleId: "com.codeium.windsurf")
+                    dividerLine
+                    ideRow(name: "Trae", bundleId: "com.trae.app")
+                    dividerLine
+                    ideRow(name: "Trae CN", bundleId: "cn.trae.app")
                 }
 
                 Text("Extensions enable direct terminal-tab jumping from the island.")
@@ -710,7 +716,6 @@ struct PreferencesView: View {
             print("[Preferences] Launch at login error: \(error)")
         }
     }
-
     private func applyPendingPaneSelectionIfNeeded(fallbackToAbout: Bool = false) {
         let defaults = UserDefaults.standard
         let pending = defaults.string(forKey: PreferencesRouting.pendingPaneSelectionKey)

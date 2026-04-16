@@ -206,8 +206,12 @@ final class SessionManager {
         }
 
         return sessions.contains { session in
-            session.agentType == .cursor && mirroredSessionSuffix(from: session.id) == sessionSuffix
+            isCursorFamily(session.agentType) && mirroredSessionSuffix(from: session.id) == sessionSuffix
         }
+    }
+
+    private func isCursorFamily(_ agentType: AgentType) -> Bool {
+        agentType == .cursor || agentType == .trae
     }
 
     private func mirroredSessionSuffix(from sessionId: String) -> String? {
@@ -216,6 +220,61 @@ final class SessionManager {
         }
         let suffix = String(sessionId[sessionId.index(after: separator)...])
         return suffix.isEmpty ? nil : suffix
+    }
+
+    private func resolvedAgentType(for message: DIMessage) -> AgentType {
+        if let explicit = AgentType.from(message.agentType) {
+            if explicit == .claudeCode, let mirrored = mirroredCursorFamilyAgent(for: message.sessionId) {
+                return mirrored
+            }
+            return explicit
+        }
+
+        if let prefix = message.sessionId.split(separator: "-", maxSplits: 1).first,
+           let inferred = AgentType.from(String(prefix)) {
+            return inferred
+        }
+
+        if let mirrored = mirroredCursorFamilyAgent(for: message.sessionId) {
+            return mirrored
+        }
+
+        if let terminal = message.terminal, let app = TerminalApp.detect(from: terminal) {
+            switch app {
+            case .cursor, .windsurf:
+                return .cursor
+            case .trae, .traeCn:
+                return .trae
+            case .codex:
+                return .codex
+            default:
+                break
+            }
+        }
+
+        if let existing = sessions.first(where: { $0.id == message.sessionId }) {
+            return existing.agentType
+        }
+
+        return .claudeCode
+    }
+
+    private func mirroredCursorFamilyAgent(for sessionId: String) -> AgentType? {
+        guard let sessionSuffix = mirroredSessionSuffix(from: sessionId) else {
+            return nil
+        }
+        return sessions.first(where: {
+            isCursorFamily($0.agentType) && mirroredSessionSuffix(from: $0.id) == sessionSuffix
+        })?.agentType
+    }
+
+    private func isMirroredCursorMessage(_ message: DIMessage) -> Bool {
+        guard let sessionSuffix = mirroredSessionSuffix(from: message.sessionId) else {
+            return false
+        }
+        return sessions.contains { session in
+            isCursorFamily(session.agentType) && mirroredSessionSuffix(from: session.id) == sessionSuffix
+        }
     }
 
     /// Bridges often emit both `cursor-<uuid>` and `claude_code-<uuid>` for one run; keep a single island row.
@@ -231,7 +290,25 @@ final class SessionManager {
     }
 
     func handlePermissionRequest(_ message: DIMessage, respond: @escaping @Sendable (Bool) -> Void) {
-        let realAgent = AgentType.from(message.agentType) ?? .claudeCode
+        let realAgent = resolvedAgentType(for: message)
+
+        if realAgent == .openCode {
+            let tool = (message.tool ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let desc = (message.permDescription ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = (message.filePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let diff = (message.diff ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let isSafeFilesystemPermission = tool == "external_directory"
+                || tool == "externaldirectory"
+            let isPlaceholderPermission = (tool.isEmpty || tool == "unknown")
+                && desc.isEmpty
+                && path.isEmpty
+                && diff.isEmpty
+            if isPlaceholderPermission || isSafeFilesystemPermission {
+                respond(true)
+                return
+            }
+        }
+
         let session = findOrCreateSessionForInteraction(message)
         session.status = .waitingPermission
         session.pendingPermission = PendingPermission(
@@ -247,7 +324,7 @@ final class SessionManager {
     }
 
     func handleQuestionRequest(_ message: DIMessage, respond: @escaping @Sendable (String) -> Void, cancel: (@Sendable () -> Void)? = nil) {
-        let realAgent = AgentType.from(message.agentType) ?? .claudeCode
+        let realAgent = resolvedAgentType(for: message)
         let text = message.questionText ?? ""
         let options = message.options ?? []
         // Skip stub events (e.g. OpenCode fires a placeholder "Question" with no options
@@ -288,7 +365,7 @@ final class SessionManager {
     }
 
     func handlePlanReview(_ message: DIMessage, respond: @escaping @Sendable (Bool, String?) -> Void) {
-        let realAgent = AgentType.from(message.agentType) ?? .claudeCode
+        let realAgent = resolvedAgentType(for: message)
         let session = findOrCreateSessionForInteraction(message)
         session.status = .waitingPlanReview
         session.pendingPlanReview = PendingPlanReview(
@@ -347,7 +424,7 @@ final class SessionManager {
     // MARK: - Private
 
     private func startSession(_ message: DIMessage) {
-        let agentType = AgentType.from(message.agentType) ?? .claudeCode
+        let agentType = resolvedAgentType(for: message)
 
         if let existing = sessions.first(where: { $0.id == message.sessionId }) {
             existing.lastActivityTime = Date()
@@ -375,7 +452,6 @@ final class SessionManager {
             twin.lastActivityTime = Date()
             twin.status = .active
             twin.statusText = ""
-            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
             clearStaleInteraction(twin)
             if let t = message.terminal, !t.isEmpty { twin.terminal = t }
             if let w = message.workingDir, !w.isEmpty { twin.workingDirectory = w }
@@ -414,7 +490,7 @@ final class SessionManager {
     }
 
     private func endSession(_ message: DIMessage) {
-        let agentType = AgentType.from(message.agentType) ?? .claudeCode
+        let agentType = resolvedAgentType(for: message)
 
         guard let session = sessionForEndMessage(message) else { return }
         let alreadyCompleted = session.status == .completed
@@ -550,9 +626,9 @@ final class SessionManager {
 
     private func handleSubagentStart(_ message: DIMessage) {
         let parentId = message.parentSessionId ?? message.sessionId
+        let resolvedAgent = resolvedAgentType(for: message)
         let matchAgent: (AgentSession) -> Bool = { session in
-            guard let agent = message.agentType else { return false }
-            return session.agentType.rawValue == agent
+            session.agentType == resolvedAgent
         }
         guard let parent = sessions.first(where: { $0.id == parentId && $0.status != .completed })
                 ?? activeSessions.first(where: matchAgent) else { return }
@@ -567,9 +643,9 @@ final class SessionManager {
 
     private func handleSubagentEnd(_ message: DIMessage) {
         let parentId = message.parentSessionId ?? message.sessionId
+        let resolvedAgent = resolvedAgentType(for: message)
         let matchAgent: (AgentSession) -> Bool = { session in
-            guard let agent = message.agentType else { return false }
-            return session.agentType.rawValue == agent
+            session.agentType == resolvedAgent
         }
         guard let parent = sessions.first(where: { $0.id == parentId && $0.status != .completed })
                 ?? activeSessions.first(where: matchAgent) else { return }
@@ -625,15 +701,19 @@ final class SessionManager {
 
     /// Interactive requests fold mirrored hook ids (`cursor-*` / `claude_code-*` same suffix) like `findOrCreateSession`.
     private func findOrCreateSessionForInteraction(_ message: DIMessage) -> AgentSession {
-        let agentType = AgentType.from(message.agentType) ?? .claudeCode
+        let agentType = resolvedAgentType(for: message)
 
         if let existing = sessions.first(where: { $0.id == message.sessionId && $0.status != .completed }) {
             existing.lastActivityTime = Date()
             return existing
         }
+        if let mirrored = mirroredCursorSession(for: message.sessionId) {
+            mirrored.lastActivityTime = Date()
+            return mirrored
+        }
+
         if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
             twin.lastActivityTime = Date()
-            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
             return twin
         }
         if let sameAgent = activeSessions.first(where: { $0.agentType == agentType }) {
@@ -657,11 +737,17 @@ final class SessionManager {
     }
 
     private func findOrCreateSession(_ message: DIMessage, reactivate: Bool = true) -> AgentSession {
-        let agentType = AgentType.from(message.agentType) ?? .claudeCode
+        let agentType = resolvedAgentType(for: message)
 
         if let existing = sessions.first(where: { $0.id == message.sessionId && $0.status != .completed }) {
             existing.lastActivityTime = Date()
             return existing
+        }
+
+        if let mirrored = mirroredCursorSession(for: message.sessionId) {
+            mirrored.lastActivityTime = Date()
+            if reactivate { mirrored.status = .active }
+            return mirrored
         }
 
         if let completed = sessions.first(where: { $0.id == message.sessionId }) {
@@ -672,7 +758,6 @@ final class SessionManager {
 
         if let twin = sessionMatchingMirroredSuffix(of: message.sessionId) {
             twin.lastActivityTime = Date()
-            twin.agentType = mergeAgentTypesForMirror(twin.agentType, agentType)
             if twin.status == .completed, reactivate { twin.status = .active }
             return twin
         }
@@ -686,5 +771,12 @@ final class SessionManager {
         )
         sessions.append(session)
         return session
+    }
+
+    private func mirroredCursorSession(for sessionId: String) -> AgentSession? {
+        guard let suffix = mirroredSessionSuffix(from: sessionId) else { return nil }
+        return sessions.first(where: {
+            isCursorFamily($0.agentType) && $0.status != .completed && mirroredSessionSuffix(from: $0.id) == suffix
+        })
     }
 }

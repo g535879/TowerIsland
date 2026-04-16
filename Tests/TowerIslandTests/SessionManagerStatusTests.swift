@@ -116,4 +116,103 @@ final class SessionManagerStatusTests: XCTestCase {
         XCTAssertEqual(manager.sessions.count, 1)
         XCTAssertEqual(manager.sessions.first?.status, .active)
     }
+
+    func testInfersCursorFromSessionIdWhenAgentTypeMissing() {
+        let manager = SessionManager()
+
+        var start = DIMessage(type: .sessionStart, sessionId: "cursor-shared-conversation")
+        start.agentType = nil
+        manager.handleMessage(start)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.agentType, .cursor)
+    }
+
+    func testMapsTraeAliasToTraeAgent() {
+        let manager = SessionManager()
+
+        var start = DIMessage(type: .sessionStart, sessionId: "trae-123")
+        start.agentType = "trae"
+        manager.handleMessage(start)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.agentType, .trae)
+    }
+
+    func testInfersTraeFromTerminalWhenAgentTypeMissing() {
+        let manager = SessionManager()
+
+        var start = DIMessage(type: .sessionStart, sessionId: "session-123")
+        start.agentType = nil
+        start.terminal = "Trae CN"
+        manager.handleMessage(start)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.agentType, .trae)
+    }
+
+    func testOpenCodePlaceholderPermissionIsAutoApprovedAndNotShown() {
+        let manager = SessionManager()
+
+        var start = DIMessage(type: .sessionStart, sessionId: "opencode-s1")
+        start.agentType = AgentType.openCode.rawValue
+        manager.handleMessage(start)
+
+        var permission = DIMessage(type: .permissionRequest, sessionId: "opencode-s1")
+        permission.agentType = AgentType.openCode.rawValue
+        permission.tool = "unknown"
+        permission.permDescription = ""
+        permission.filePath = ""
+
+        var approved: Bool?
+        manager.handlePermissionRequest(permission, respond: { value in
+            approved = value
+        })
+
+        let session = manager.sessions.first(where: { $0.id == "opencode-s1" })
+        XCTAssertEqual(approved, true)
+        XCTAssertEqual(session?.status, .active)
+        XCTAssertNil(session?.pendingPermission)
+    }
+
+    func testOpenCodeExternalDirectoryPermissionIsAutoApprovedAndNotShown() {
+        let manager = SessionManager()
+
+        var start = DIMessage(type: .sessionStart, sessionId: "opencode-s2")
+        start.agentType = AgentType.openCode.rawValue
+        manager.handleMessage(start)
+
+        var permission = DIMessage(type: .permissionRequest, sessionId: "opencode-s2")
+        permission.agentType = AgentType.openCode.rawValue
+        permission.tool = "External_directory"
+        permission.permDescription = "External_directory: /tmp/*"
+        permission.filePath = "/tmp/*"
+
+        var approved: Bool?
+        manager.handlePermissionRequest(permission, respond: { value in
+            approved = value
+        })
+
+        let session = manager.sessions.first(where: { $0.id == "opencode-s2" })
+        XCTAssertEqual(approved, true)
+        XCTAssertEqual(session?.status, .active)
+        XCTAssertNil(session?.pendingPermission)
+    }
+
+    func testMirroredClaudeStatusUsesExistingCursorSession() {
+        let manager = SessionManager()
+
+        var cursorStart = DIMessage(type: .sessionStart, sessionId: "cursor-shared-conversation")
+        cursorStart.agentType = AgentType.cursor.rawValue
+        manager.handleMessage(cursorStart)
+
+        var mirroredStatus = DIMessage(type: .statusUpdate, sessionId: "claude_code-shared-conversation")
+        mirroredStatus.agentType = AgentType.claudeCode.rawValue
+        mirroredStatus.status = "Working via subagent"
+        manager.handleMessage(mirroredStatus)
+
+        XCTAssertEqual(manager.sessions.count, 1)
+        XCTAssertEqual(manager.sessions.first?.agentType, .cursor)
+        XCTAssertEqual(manager.sessions.first?.statusText, "Working via subagent")
+    }
 }
