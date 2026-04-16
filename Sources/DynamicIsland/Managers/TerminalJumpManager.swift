@@ -97,54 +97,68 @@ enum TerminalApp: String, CaseIterable {
 enum TerminalJumpManager {
     static func jump(to session: AgentSession) {
         let targetApp = resolveTargetApp(for: session)
+        log("click session=\(session.id) agent=\(session.agentType.rawValue) terminal=\(session.terminal) cwd=\(session.workingDirectory) target=\(targetApp?.rawValue ?? "nil")")
 
         if session.agentType == .cursor {
             let preferredApp = (targetApp == .windsurf) ? TerminalApp.windsurf : TerminalApp.cursor
             if raiseMatchingWindow(session: session, bundleId: preferredApp.bundleId, allowFallbackActivate: false) {
+                log("cursor matched existing window app=\(preferredApp.rawValue)")
                 return
             }
             if raiseAllCursorWindows(preferredBundleId: preferredApp.bundleId) {
+                log("cursor raised all cursor-family windows")
                 return
             }
             if !session.workingDirectory.isEmpty,
                openWorkspaceWindow(app: preferredApp, workingDirectory: session.workingDirectory) {
+                log("cursor opened workspace app=\(preferredApp.rawValue)")
                 return
             }
+            log("cursor fallback activate app=\(preferredApp.rawValue)")
             activateApp(preferredApp)
             return
         }
 
         if let app = targetApp {
             if let tsid = session.termSessionId, !tsid.isEmpty, app == .iterm2 {
+                log("jumping to iTerm session id=\(tsid)")
                 jumpToITermSession(termSessionId: tsid)
                 return
             }
 
             if app.isVSCodeFamily && !session.workingDirectory.isEmpty {
                 if raiseMatchingWindow(session: session, bundleId: app.bundleId, allowFallbackActivate: false) {
+                    log("matched VSCode-family window app=\(app.rawValue)")
                     return
                 }
                 if app == .cursor, raiseAllWindows(bundleId: app.bundleId) {
+                    log("raised all windows for app=\(app.rawValue)")
                     return
                 }
                 if openWorkspaceWindow(app: app, workingDirectory: session.workingDirectory) {
+                    log("opened workspace window app=\(app.rawValue)")
                     return
                 }
+                log("activating app fallback app=\(app.rawValue)")
                 activateApp(app)
                 return
             } else {
                 if raiseMatchingWindow(session: session, bundleId: app.bundleId) {
+                    log("matched window app=\(app.rawValue)")
                     return
                 }
+                log("activating app fallback app=\(app.rawValue)")
                 activateApp(app)
                 return
             }
         }
 
         if session.agentType == .openCode {
+            log("openCode has no resolvable target app; skip jump")
             return
         }
 
+        log("fallback activate by agent name agent=\(session.agentType.rawValue)")
         activateByAgentName(session.agentType)
     }
 
@@ -418,5 +432,9 @@ enum TerminalJumpManager {
                 script.executeAndReturnError(&error)
             }
         }
+    }
+
+    private static func log(_ message: String) {
+        print("[JumpDebug] \(message)")
     }
 }
