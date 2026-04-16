@@ -39,7 +39,7 @@ enum TerminalApp: String, CaseIterable {
         case .warp: ["warp"]
         case .alacritty: ["alacritty"]
         case .kitty: ["kitty"]
-        case .vscode: ["visual studio code", "vscode", "code"]
+        case .vscode: ["visual studio code", "vscode"]
         case .cursor: ["cursor"]
         case .windsurf: ["windsurf"]
         case .trae: ["trae"]
@@ -139,6 +139,10 @@ enum TerminalJumpManager {
                 activateApp(app)
                 return
             }
+        }
+
+        if session.agentType == .openCode {
+            return
         }
 
         activateByAgentName(session.agentType)

@@ -73,4 +73,8 @@ final class TerminalAppDetectionTests: XCTestCase {
 
         XCTAssertEqual(TerminalJumpManager.resolveTargetApp(for: session), .codex)
     }
+
+    func testDoesNotMisdetectOpenCodeAsVSCode() {
+        XCTAssertNil(TerminalApp.detect(from: "OpenCode"))
+    }
 }
