@@ -28,7 +28,7 @@ struct SessionCardView: View {
 
     var body: some View {
         Button {
-            TerminalJumpManager.jump(to: session)
+            _ = TerminalJumpManager.jump(to: session)
             onJump?()
         } label: {
             VStack(alignment: .leading, spacing: 0) {
@@ -118,6 +118,7 @@ struct SessionCardView: View {
 
             HStack(spacing: 5) {
                 TagBadge(text: session.agentType.shortName, color: session.agentType.color)
+                TagBadge(text: sourceBadgeText, color: .white.opacity(0.58))
 
                 if displayTimestamp {
                     TagBadge(text: session.formattedDuration, color: .white.opacity(0.3))
@@ -188,15 +189,68 @@ struct SessionCardView: View {
         }
     }
 
-    private func terminalShortName(_ name: String) -> String {
-        let lower = name.lowercased()
-        if lower.contains("iterm") { return "iTerm2" }
-        if lower.contains("terminal") { return "Terminal" }
-        if lower.contains("ghostty") { return "Ghostty" }
-        if lower.contains("warp") { return "Warp" }
-        if lower.contains("kitty") { return "Kitty" }
-        return name
+    private var sourceBadgeText: String {
+        let terminal = normalizedTerminalToken(session.terminal)
+
+        if session.agentType == .cursor {
+            if terminal == "cursor" {
+                return "cursor ide"
+            }
+            if terminal == "terminal", (session.termSessionId ?? "").isEmpty {
+                return "cursor ide"
+            }
+            if !terminal.isEmpty {
+                return terminal
+            }
+            return "cursor cli"
+        }
+
+        if session.agentType == .codex {
+            return terminal == "codex" ? "codex ide" : "codex cli"
+        }
+
+        if terminal == "cursor" {
+            return "cursor ide"
+        }
+        if terminal == "codex" {
+            return "codex ide"
+        }
+
+        if !terminal.isEmpty {
+            return terminal
+        }
+
+        switch session.agentType {
+        case .cursor:
+            return "cursor cli"
+        case .codex:
+            return "codex cli"
+        default:
+            return session.agentType.shortName.lowercased() + " cli"
+        }
     }
+
+    private func normalizedTerminalToken(_ raw: String) -> String {
+        let lower = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lower.isEmpty { return "" }
+
+        if lower.contains("iterm") { return "iterm" }
+        if lower.contains("warp") { return "warp" }
+        if lower == "terminal" || lower.contains("apple_terminal") || lower.contains("com.apple.terminal") {
+            return "terminal"
+        }
+        if lower.contains("cursor") { return "cursor" }
+        if lower.contains("codex") { return "codex" }
+        if lower.contains("ghostty") { return "ghostty" }
+        if lower.contains("kitty") { return "kitty" }
+        if lower.contains("alacritty") { return "alacritty" }
+        if lower.contains("vscode") || lower.contains("visual studio code") || lower == "code" {
+            return "vscode"
+        }
+
+        return lower
+    }
+
 }
 
 struct StatusDot: View {

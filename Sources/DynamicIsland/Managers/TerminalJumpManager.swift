@@ -1,4 +1,6 @@
 import AppKit
+import Foundation
+import DIShared
 
 enum TerminalApp: String, CaseIterable {
     case iterm2 = "iTerm2"
@@ -12,19 +14,23 @@ enum TerminalApp: String, CaseIterable {
     case windsurf = "Windsurf"
     case codex = "Codex"
 
-    var bundleId: String {
+    var bundleIds: [String] {
         switch self {
-        case .iterm2: "com.googlecode.iterm2"
-        case .terminal: "com.apple.Terminal"
-        case .ghostty: "com.mitchellh.ghostty"
-        case .warp: "dev.warp.Warp-Stable"
-        case .alacritty: "org.alacritty"
-        case .kitty: "net.kovidgoyal.kitty"
-        case .vscode: "com.microsoft.VSCode"
-        case .cursor: "com.todesktop.230313mzl4w4u92"
-        case .windsurf: "com.codeium.windsurf"
-        case .codex: "com.openai.codex"
+        case .iterm2: ["com.googlecode.iterm2"]
+        case .terminal: ["com.apple.Terminal"]
+        case .ghostty: ["com.mitchellh.ghostty"]
+        case .warp: ["dev.warp.Warp-Stable", "dev.warp.Warp"]
+        case .alacritty: ["org.alacritty"]
+        case .kitty: ["net.kovidgoyal.kitty"]
+        case .vscode: ["com.microsoft.VSCode"]
+        case .cursor: ["com.todesktop.230313mzl4w4u92"]
+        case .windsurf: ["com.codeium.windsurf"]
+        case .codex: ["com.openai.codex"]
         }
+    }
+
+    var bundleId: String {
+        bundleIds[0]
     }
 
     var aliases: [String] {
@@ -44,9 +50,19 @@ enum TerminalApp: String, CaseIterable {
 
     static func detect(from name: String) -> TerminalApp? {
         let lower = name.lowercased()
+
+        if lower.contains("warp") { return .warp }
+        if lower.contains("iterm") { return .iterm2 }
+        if lower.contains("ghostty") { return .ghostty }
+        if lower.contains("alacritty") { return .alacritty }
+        if lower.contains("kitty") { return .kitty }
+        if lower.contains("apple_terminal") || lower == "terminal" || lower.contains("com.apple.terminal") {
+            return .terminal
+        }
+
         return allCases.first { app in
             app.aliases.contains(where: { lower.contains($0) })
-                || lower.contains(app.bundleId.lowercased())
+                || app.bundleIds.contains(where: { lower.contains($0.lowercased()) })
         }
     }
 
@@ -62,23 +78,37 @@ enum TerminalApp: String, CaseIterable {
 }
 
 enum TerminalJumpManager {
-    static func jump(to session: AgentSession) {
-        let targetApp: TerminalApp? = TerminalApp.forAgent(session.agentType)
-            ?? (session.terminal.isEmpty ? nil : TerminalApp.detect(from: session.terminal))
+    static func jump(to session: AgentSession) -> Bool {
+        let detectedApp: TerminalApp? = session.terminal.isEmpty ? nil : TerminalApp.detect(from: session.terminal)
+        let agentPreferredApp = TerminalApp.forAgent(session.agentType)
+
+        let targetApp: TerminalApp?
+        if session.agentType == .cursor {
+            let termSessionId = session.termSessionId ?? ""
+            let isCursorIDE = detectedApp == .cursor
+                || (detectedApp == .terminal && termSessionId.isEmpty)
+            targetApp = isCursorIDE ? .cursor : (detectedApp ?? agentPreferredApp)
+        } else {
+            targetApp = detectedApp ?? agentPreferredApp
+        }
 
         if let app = targetApp {
             if let tsid = session.termSessionId, !tsid.isEmpty, app == .iterm2 {
                 jumpToITermSession(termSessionId: tsid)
-                return
+                return true
             }
-            if raiseMatchingWindow(session: session, bundleId: app.bundleId) {
-                return
+            if app == .terminal, jumpToTerminalWindow(session: session) {
+                return true
+            }
+            if raiseMatchingWindow(session: session, app: app) {
+                return true
             }
             activateApp(app)
-            return
+            return app != .warp
         }
 
         activateByAgentName(session.agentType)
+        return true
     }
 
     private static func jumpToITermSession(termSessionId: String) {
@@ -121,8 +151,55 @@ enum TerminalJumpManager {
         runAppleScript(script)
     }
 
-    private static func raiseMatchingWindow(session: AgentSession, bundleId: String) -> Bool {
-        guard let runningApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first else {
+    private static func jumpToTerminalWindow(session: AgentSession) -> Bool {
+        let folderName = (session.workingDirectory as NSString).lastPathComponent
+        let escapedFolder = folderName.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let hasWindowId = session.windowNumber != nil
+        guard hasWindowId || !folderName.isEmpty else { return false }
+
+        let commands: [String] = {
+            if let wid = session.windowNumber {
+                return [
+                    "repeat with w in windows",
+                    "if id of w is \(wid) then",
+                    "set index of w to 1",
+                    "activate",
+                    "return true",
+                    "end if",
+                    "end repeat"
+                ]
+            }
+            return [
+                "repeat with w in windows",
+                "repeat with t in tabs of w",
+                "set tn to custom title of t",
+                "if tn is missing value then set tn to \"\"",
+                "set tname to (tn as text)",
+                "if tname contains \"\(escapedFolder)\" then",
+                "set selected tab of w to t",
+                "set index of w to 1",
+                "activate",
+                "return true",
+                "end if",
+                "end repeat",
+                "end repeat"
+            ]
+        }()
+
+        let script = """
+        tell application \"Terminal\"
+            \(commands.joined(separator: "\n            "))
+            return false
+        end tell
+        """
+
+        return runAppleScriptBool(script)
+    }
+
+    private static func raiseMatchingWindow(session: AgentSession, app: TerminalApp) -> Bool {
+        let runningApps = app.bundleIds
+            .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+        guard let runningApp = runningApps.first else {
             return false
         }
 
@@ -135,14 +212,11 @@ enum TerminalJumpManager {
         }
 
         if let targetWid = session.windowNumber {
-            for window in windows {
-                var pidRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(window, "_AXWindowNumber" as CFString, &pidRef) == .success,
-                   let num = pidRef as? Int, num == targetWid {
-                    AXUIElementPerformAction(window, "AXRaise" as CFString)
-                    runningApp.activate()
-                    return true
-                }
+            if let matchedWindow = matchAXWindowByWindowNumber(windows: windows, windowNumber: targetWid)
+                ?? matchAXWindowByWindowTitle(windows: windows, title: windowTitle(for: targetWid)) {
+                AXUIElementPerformAction(matchedWindow, "AXRaise" as CFString)
+                runningApp.activate()
+                return true
             }
         }
 
@@ -196,18 +270,34 @@ enum TerminalJumpManager {
     }
 
     static func captureFrontWindowNumber(for agentType: AgentType, terminal: String) -> Int? {
-        let bundleId: String?
+        let targetApp: TerminalApp?
         if let app = TerminalApp.forAgent(agentType) {
-            bundleId = app.bundleId
+            targetApp = app
         } else if !terminal.isEmpty, let app = TerminalApp.detect(from: terminal) {
-            bundleId = app.bundleId
+            targetApp = app
         } else {
-            bundleId = nil
+            targetApp = nil
         }
-        guard let bid = bundleId,
-              let app = NSRunningApplication.runningApplications(withBundleIdentifier: bid).first else {
+
+        guard let targetApp else { return nil }
+        let runningApps = targetApp.bundleIds
+            .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+        guard let app = runningApps.first else {
             return nil
         }
+
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var focusedWindowRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindowRef) == .success,
+           let focusedWindowRef {
+            let focusedWindow = unsafeBitCast(focusedWindowRef, to: AXUIElement.self)
+            var numberRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(focusedWindow, "_AXWindowNumber" as CFString, &numberRef) == .success,
+               let windowNumber = numberRef as? Int {
+                return windowNumber
+            }
+        }
+
         let opts = CGWindowListOption([.optionOnScreenOnly, .excludeDesktopElements])
         guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
             return nil
@@ -224,7 +314,48 @@ enum TerminalJumpManager {
 
     // MARK: - Helpers
 
+    private static func matchAXWindowByWindowNumber(windows: [AXUIElement], windowNumber: Int) -> AXUIElement? {
+        for window in windows {
+            var numberRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(window, "_AXWindowNumber" as CFString, &numberRef) == .success,
+               let num = numberRef as? Int,
+               num == windowNumber {
+                return window
+            }
+        }
+        return nil
+    }
+
+    private static func matchAXWindowByWindowTitle(windows: [AXUIElement], title: String?) -> AXUIElement? {
+        guard let title, !title.isEmpty else { return nil }
+        for window in windows {
+            var titleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(window, "AXTitle" as CFString, &titleRef) == .success,
+               let axTitle = titleRef as? String,
+               (axTitle == title || axTitle.localizedCaseInsensitiveContains(title) || title.localizedCaseInsensitiveContains(axTitle)) {
+                return window
+            }
+        }
+        return nil
+    }
+
+    private static func windowTitle(for windowNumber: Int) -> String? {
+        let options = CGWindowListOption([.optionAll])
+        guard let list = CGWindowListCopyWindowInfo(options, CGWindowID(windowNumber)) as? [[String: Any]],
+              let info = list.first else {
+            return nil
+        }
+        return info[kCGWindowName as String] as? String
+    }
+
     private static func activateApp(_ app: TerminalApp) {
+        let runningApps = app.bundleIds
+            .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
+        if let running = runningApps.first {
+            running.activate(options: [.activateAllWindows])
+            return
+        }
+
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleId) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
@@ -240,12 +371,17 @@ enum TerminalJumpManager {
         }
     }
 
+    private static func runAppleScriptBool(_ source: String) -> Bool {
+        guard let script = NSAppleScript(source: source) else { return false }
+        var error: NSDictionary?
+        let output = script.executeAndReturnError(&error)
+        if error != nil { return false }
+        return output.booleanValue
+    }
+
     private static func runAppleScript(_ source: String) {
         DispatchQueue.global(qos: .userInitiated).async {
-            if let script = NSAppleScript(source: source) {
-                var error: NSDictionary?
-                script.executeAndReturnError(&error)
-            }
+            _ = runAppleScriptBool(source)
         }
     }
 }

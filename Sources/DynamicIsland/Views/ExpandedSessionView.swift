@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ExpandedSessionView: View {
     let session: AgentSession
-    @Environment(SessionManager.self) private var manager
     var onDismiss: (() -> Void)?
 
     var body: some View {
@@ -38,7 +37,7 @@ struct ExpandedSessionView: View {
             statusBadge
 
             Button {
-                TerminalJumpManager.jump(to: session)
+                _ = TerminalJumpManager.jump(to: session)
                 onDismiss?()
             } label: {
                 HStack(spacing: 3) {
