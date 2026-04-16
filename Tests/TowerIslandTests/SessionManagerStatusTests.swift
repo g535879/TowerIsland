@@ -215,4 +215,36 @@ final class SessionManagerStatusTests: XCTestCase {
         XCTAssertEqual(manager.sessions.first?.agentType, .cursor)
         XCTAssertEqual(manager.sessions.first?.statusText, "Working via subagent")
     }
+
+    func testDiagnosticsIslandStatePrefersWaitingInteractionOverSelectedActiveSession() {
+        let manager = SessionManager()
+
+        let selected = AgentSession(id: "selected-active", agentType: .claudeCode, workingDirectory: "/tmp/selected")
+        selected.status = .active
+
+        let waiting = AgentSession(id: "waiting-plan", agentType: .codex, workingDirectory: "/tmp/waiting")
+        waiting.status = .waitingPlanReview
+        waiting.pendingPlanReview = PendingPlanReview(
+            requestingAgent: .codex,
+            markdown: "## Plan",
+            respond: { _, _ in }
+        )
+
+        manager.sessions = [selected, waiting]
+        manager.selectedSessionId = selected.id
+
+        XCTAssertEqual(manager.diagnosticsIslandState, "planReview")
+    }
+
+    func testDiagnosticsIslandStateReportsCollapsedForVisibleNonInteractiveSessionsUntilViewExpands() {
+        let manager = SessionManager()
+
+        let session = AgentSession(id: "active", agentType: .claudeCode, workingDirectory: "/tmp/selected")
+        session.status = .active
+
+        manager.sessions = [session]
+        manager.selectedSessionId = session.id
+
+        XCTAssertEqual(manager.diagnosticsIslandState, "collapsed")
+    }
 }

@@ -16,6 +16,7 @@ struct PlanReviewView: View {
                 planContent(plan)
             }
         }
+        .accessibilityIdentifier(TestAccessibility.planPanel)
     }
 
     private var displayAgent: AgentType {
@@ -60,6 +61,7 @@ struct PlanReviewView: View {
                     .background(IslandStyle.insetFill)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .lineLimit(3)
+                    .accessibilityIdentifier(TestAccessibility.planFeedbackField)
             }
 
             HStack(spacing: 10) {
@@ -91,6 +93,7 @@ struct PlanReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("n", modifiers: .command)
+                .accessibilityIdentifier(TestAccessibility.planRejectButton)
 
                 Button {
                     manager.respondToPlan(session: session, approved: true, feedback: feedback.isEmpty ? nil : feedback)
@@ -106,6 +109,7 @@ struct PlanReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("y", modifiers: .command)
+                .accessibilityIdentifier(TestAccessibility.planApproveButton)
             }
         }
         .padding(.horizontal, 16)

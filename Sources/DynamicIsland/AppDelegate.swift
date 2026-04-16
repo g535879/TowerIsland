@@ -14,6 +14,22 @@ enum PreferencesRouting {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    typealias StartupAction = @MainActor (AppDelegate) -> Void
+
+    struct LaunchHooks {
+        let performInitialStartup: StartupAction
+        let performProductionGlobalStartup: StartupAction
+
+        static let live = Self(
+            performInitialStartup: { appDelegate in
+                appDelegate.performInitialStartup()
+            },
+            performProductionGlobalStartup: { appDelegate in
+                appDelegate.performProductionGlobalStartup()
+            }
+        )
+    }
+
     static private(set) var shared: AppDelegate!
     /// Set when this process lost the single-instance lock and is about to exit; skip normal startup.
     private static var exitingAsDuplicateInstance = false
@@ -28,8 +44,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var checkForUpdatesMenuItem: NSMenuItem?
     private var installUpdateMenuItem: NSMenuItem?
+    private var diagnosticsWriter: AppDiagnosticsWriter?
+    private let testConfiguration: AppTestConfiguration
+    private let launchHooks: LaunchHooks
+
+    override init() {
+        self.testConfiguration = AppTestConfiguration.current()
+        self.launchHooks = .live
+        super.init()
+    }
+
+    init(
+        testConfiguration: AppTestConfiguration = AppTestConfiguration.current(),
+        launchHooks: LaunchHooks = .live
+    ) {
+        self.testConfiguration = testConfiguration
+        self.launchHooks = launchHooks
+        super.init()
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        guard !testConfiguration.allowsMultipleInstances else { return }
+
         if !Self.acquireSingleInstanceLock() {
             Self.exitingAsDuplicateInstance = true
             Self.activateOtherInstancesOfThisApp()
@@ -46,24 +82,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "showOnAllSpaces": true,
             "autoCollapseDelay": 3.0,
             "smartSuppression": true,
+            "autoHideWhenNoActiveSessions": false,
             "compactBadgesInExpandedView": true,
             "displayTimestamp": true,
             "completedLingerDuration": 120.0,
         ])
-
-        sessionManager.audioEngine = audioEngine
-        setupNotchWindow()
-        setupMenuBarItem()
-        DispatchQueue.main.async { [weak self] in
-            self?.installApplicationMenuItems()
+        testConfiguration.applyDefaults()
+        do {
+            try configureTesting()
+        } catch {
+            preconditionFailure("Failed to load app test fixture: \(error)")
         }
-        observeUpdateState()
-        startSocketServer()
-        sessionManager.startCleanupTimer()
-        ZeroConfigManager.configureAllAgents()
 
-        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
-            ZeroConfigManager.repairHooksIfNeeded()
+        launchHooks.performInitialStartup(self)
+
+        if testConfiguration.runsProductionGlobalStartupSideEffects {
+            launchHooks.performProductionGlobalStartup(self)
         }
 
         NotificationCenter.default.addObserver(
@@ -73,6 +107,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 self?.notchWindow?.applySpaceBehavior()
             }
+        }
+
+        let initialIslandState = NotchContentView.initialIslandState(for: sessionManager)
+        sessionManager.currentIslandState = initialIslandState
+        refreshDiagnostics(
+            islandState: NotchContentView.diagnosticsIslandState(
+                for: sessionManager,
+                currentState: initialIslandState
+            )
+        )
+
+        if testConfiguration.opensPreferencesOnLaunch {
+            openPreferences()
         }
     }
 
@@ -141,6 +188,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startSocketServer() {
         socketServer = SocketServer(sessionManager: sessionManager)
         socketServer?.start()
+    }
+
+    private func performInitialStartup() {
+        sessionManager.audioEngine = audioEngine
+        setupNotchWindow()
+        setupMenuBarItem()
+        DispatchQueue.main.async { [weak self] in
+            self?.installApplicationMenuItems()
+        }
+        observeUpdateState()
+        sessionManager.startCleanupTimer()
+    }
+
+    private func performProductionGlobalStartup() {
+        startSocketServer()
+        ZeroConfigManager.configureAllAgents()
+
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            ZeroConfigManager.repairHooksIfNeeded()
+        }
+    }
+
+    func configureTesting() throws {
+        guard testConfiguration.isEnabled else { return }
+
+        if let diagnosticsPath = testConfiguration.diagnosticsPath {
+            diagnosticsWriter = AppDiagnosticsWriter(outputURL: URL(fileURLWithPath: diagnosticsPath))
+        }
+
+        try AppTestFixtureLoader.load(
+            configuration: testConfiguration,
+            into: sessionManager,
+            updateManager: updateManager
+        )
     }
 
     private func installApplicationMenuItems() {
@@ -291,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.refreshUpdateMenuState()
+                self?.refreshDiagnostics(islandState: self?.sessionManager.diagnosticsIslandState ?? "collapsed")
                 self?.observeUpdateState()
             }
         }
@@ -300,9 +382,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.refreshUpdateMenuState()
+                self?.refreshDiagnostics(islandState: self?.sessionManager.diagnosticsIslandState ?? "collapsed")
                 self?.observeUpdateState()
             }
         }
+    }
+
+    func refreshDiagnostics(islandState: String) {
+        guard testConfiguration.isEnabled, let diagnosticsWriter else { return }
+
+        let snapshot = AppDiagnosticsSnapshot.make(
+            sessionManager: sessionManager,
+            updateManager: updateManager,
+            islandState: islandState,
+            preferencesVisible: settingsWindow?.isVisible == true
+        )
+
+        do {
+            try diagnosticsWriter.write(snapshot)
+        } catch {
+            NSLog("Failed to write app diagnostics: \(error)")
+        }
+    }
+
+    func refreshDiagnostics(islandState: IslandState) {
+        refreshDiagnostics(islandState: islandState.diagnosticsValue)
     }
 
     private func refreshUpdateMenuState() {

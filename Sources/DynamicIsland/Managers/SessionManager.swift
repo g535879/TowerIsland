@@ -9,6 +9,7 @@ final class SessionManager {
     var sessions: [AgentSession] = []
     var selectedSessionId: String?
     var audioEngine: AudioEngine?
+    var currentIslandState: IslandState = .collapsed
     /// Incremented to force SwiftUI to re-evaluate `visibleSessions` after linger expires.
     var visibleSessionsVersion: Int = 0
     private var cleanupTimer: Timer?
@@ -83,7 +84,7 @@ final class SessionManager {
         }
     }
 
-    private func handleAppTerminated(bundleId: String) {
+    func handleAppTerminated(bundleId: String) {
         guard let agentType = AgentType.fromBundleId(bundleId) else { return }
         for session in activeSessions where session.agentType == agentType {
             markCompleted(session)
@@ -91,45 +92,66 @@ final class SessionManager {
         if let selectedSessionId, sessions.first(where: { $0.id == selectedSessionId })?.status == .completed {
             self.selectedSessionId = activeSessions.first?.id
         }
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     // MARK: - CLI Process Checking
 
     private func checkProcessesAlive() {
-        let checks: [(AgentType, [String])] = activeSessions
+        let checks = cliProcessChecks()
+        guard !checks.isEmpty else { return }
+
+        Task.detached(priority: .utility) { [checks] in
+            let deadAgents = checks.compactMap { check -> AgentType? in
+                let (agentType, names) = check
+                guard !Self.isAnyProcessRunning(names: names) else { return nil }
+                return agentType
+            }
+            guard !deadAgents.isEmpty else { return }
+            await MainActor.run {
+                AppDelegate.shared?.sessionManager.handleDeadAgents(deadAgents)
+            }
+        }
+    }
+
+    @MainActor
+    func checkProcessesAlive(processStatus: @escaping @Sendable ([String]) -> Bool) {
+        let checks = cliProcessChecks()
+        let deadAgents = checks.compactMap { check -> AgentType? in
+            let (agentType, names) = check
+            return processStatus(names) ? nil : agentType
+        }
+        handleDeadAgents(deadAgents)
+    }
+
+    private func cliProcessChecks() -> [(AgentType, [String])] {
+        activeSessions
             .filter { !$0.agentType.isDesktopApp && !$0.agentType.processNames.isEmpty }
             .reduce(into: [(AgentType, [String])]()) { result, session in
                 if !result.contains(where: { $0.0 == session.agentType }) {
                     result.append((session.agentType, session.agentType.processNames))
                 }
             }
-
-        guard !checks.isEmpty else { return }
-
-        Task.detached { [weak self] in
-            var deadAgents: [AgentType] = []
-            for (agentType, names) in checks {
-                if let self, !self.isAnyProcessRunning(names: names) {
-                    deadAgents.append(agentType)
-                }
-            }
-            guard !deadAgents.isEmpty else { return }
-            await MainActor.run {
-                guard let self else { return }
-                for agentType in deadAgents {
-                    for session in self.activeSessions where session.agentType == agentType {
-                        self.markCompleted(session)
-                    }
-                }
-                if let sid = self.selectedSessionId,
-                   self.sessions.first(where: { $0.id == sid })?.status == .completed {
-                    self.selectedSessionId = self.activeSessions.first?.id
-                }
-            }
-        }
     }
 
-    private nonisolated func isAnyProcessRunning(names: [String]) -> Bool {
+    private func handleDeadAgents(_ deadAgents: [AgentType]) {
+        guard !deadAgents.isEmpty else { return }
+
+        for agentType in deadAgents {
+            for session in activeSessions where session.agentType == agentType {
+                markCompleted(session)
+            }
+        }
+
+        if let sid = selectedSessionId,
+           sessions.first(where: { $0.id == sid })?.status == .completed {
+            selectedSessionId = activeSessions.first?.id
+        }
+
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
+    }
+
+    private nonisolated static func isAnyProcessRunning(names: [String]) -> Bool {
         for name in names {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
@@ -145,7 +167,7 @@ final class SessionManager {
         return false
     }
 
-    private func cleanupStaleSessions() {
+    func cleanupStaleSessions() {
         let now = Date()
         for session in activeSessions {
             if (session.status == .active || session.status == .idle),
@@ -156,6 +178,7 @@ final class SessionManager {
         if let selectedSessionId, sessions.first(where: { $0.id == selectedSessionId })?.status == .completed {
             self.selectedSessionId = activeSessions.first?.id
         }
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     var selectedSession: AgentSession? {
@@ -167,6 +190,18 @@ final class SessionManager {
         activeSessions.contains {
             $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview
         }
+    }
+
+    var prioritizedInteractionSession: AgentSession? {
+        activeSessions.first {
+            $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview
+        }
+    }
+
+    var diagnosticsIslandState: String {
+        NotchContentView
+            .diagnosticsIslandState(for: self, currentState: currentIslandState)
+            .diagnosticsValue
     }
 
     func handleMessage(_ message: DIMessage) {
@@ -194,6 +229,8 @@ final class SessionManager {
         default:
             break
         }
+
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     private func shouldIgnoreMirroredSession(_ message: DIMessage) -> Bool {
@@ -321,6 +358,7 @@ final class SessionManager {
         )
         selectedSessionId = session.id
         audioEngine?.play(.permissionRequest)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func handleQuestionRequest(_ message: DIMessage, respond: @escaping @Sendable (String) -> Void, cancel: (@Sendable () -> Void)? = nil) {
@@ -362,6 +400,7 @@ final class SessionManager {
         )
         selectedSessionId = session.id
         audioEngine?.play(.question)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func handlePlanReview(_ message: DIMessage, respond: @escaping @Sendable (Bool, String?) -> Void) {
@@ -375,6 +414,7 @@ final class SessionManager {
         )
         selectedSessionId = session.id
         audioEngine?.play(.planReview)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func approvePermission(session: AgentSession) {
@@ -382,6 +422,7 @@ final class SessionManager {
         session.pendingPermission = nil
         session.status = .active
         audioEngine?.play(.approved)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func denyPermission(session: AgentSession) {
@@ -389,6 +430,7 @@ final class SessionManager {
         session.pendingPermission = nil
         session.status = .active
         audioEngine?.play(.denied)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func answerQuestion(session: AgentSession, answer: String) {
@@ -405,6 +447,7 @@ final class SessionManager {
         session.pendingQuestion = nil
         session.status = .active
         audioEngine?.play(.answered)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func respondToPlan(session: AgentSession, approved: Bool, feedback: String?) {
@@ -412,6 +455,7 @@ final class SessionManager {
         session.pendingPlanReview = nil
         session.status = .active
         audioEngine?.play(approved ? .approved : .denied)
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     func dismissSession(_ session: AgentSession) {
@@ -419,6 +463,7 @@ final class SessionManager {
         if selectedSessionId == session.id {
             selectedSessionId = activeSessions.first?.id
         }
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     // MARK: - Private
@@ -548,12 +593,16 @@ final class SessionManager {
         }
     }
 
-    private func cleanupLingeredSessions() {
+    func cleanupLingeredSessions() {
         let now = Date()
         sessions.removeAll { session in
             guard session.status == .completed, let completedAt = session.completedAt else { return false }
             return now.timeIntervalSince(completedAt) > completedLingerDuration + 5
         }
+        if let selectedSessionId, !sessions.contains(where: { $0.id == selectedSessionId }) {
+            self.selectedSessionId = activeSessions.first?.id
+        }
+        AppDelegate.shared?.refreshDiagnostics(islandState: diagnosticsIslandState)
     }
 
     private func handleToolStart(_ message: DIMessage) {
