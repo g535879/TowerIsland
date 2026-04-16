@@ -215,6 +215,36 @@ final class UpdateManager {
         }
     }
 
+    func applyFixture(_ fixture: AppTestFixture.UpdateFixture?) {
+        latestRelease = fixture?.release
+        lastCheckedAt = nil
+
+        guard let fixture else {
+            state = .idle
+            return
+        }
+
+        switch fixture.state {
+        case .idle:
+            state = .idle
+        case .checking:
+            state = .checking
+            lastCheckedAt = Date()
+        case .upToDate:
+            state = .upToDate
+            lastCheckedAt = Date()
+        case .updateAvailable:
+            state = .updateAvailable(version: fixture.version ?? fixture.release?.normalizedVersion ?? "")
+            lastCheckedAt = Date()
+        case .installing:
+            state = .installing(stage: fixture.stage ?? "downloading")
+            lastCheckedAt = Date()
+        case .failed:
+            state = .failed(message: fixture.message ?? "Fixture configured failure.")
+            lastCheckedAt = Date()
+        }
+    }
+
     nonisolated private static func installStageDescription(for stage: AppUpdaterStage) -> String {
         switch stage {
         case .downloading:

@@ -60,6 +60,7 @@ struct PreferencesView: View {
         }
         .frame(width: 680, height: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityIdentifier(TestAccessibility.preferencesRoot)
         .confirmationDialog(
             "Install update now?",
             isPresented: $isShowingInstallConfirmation,
@@ -372,6 +373,7 @@ struct PreferencesView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(updateStatusColor)
                             .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier(TestAccessibility.updateStatusLabel)
                     }
                     dividerLine
                     row("Actions") {
@@ -383,6 +385,7 @@ struct PreferencesView: View {
                             }
                             .controlSize(.small)
                             .disabled(isCheckingForUpdates || isInstallingUpdate)
+                            .accessibilityIdentifier(TestAccessibility.updateCheckButton)
 
                             if canInstallUpdate {
                                 Button(updateInstallButtonTitle) {
@@ -390,6 +393,7 @@ struct PreferencesView: View {
                                 }
                                 .controlSize(.small)
                                 .disabled(isInstallingUpdate)
+                                .accessibilityIdentifier(TestAccessibility.updateInstallButton)
                             }
                         }
                     }

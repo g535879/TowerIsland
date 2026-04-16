@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-enum SessionStatus: String, Sendable {
+enum SessionStatus: String, Codable, Sendable {
     case active
     case idle
     case thinking

@@ -375,6 +375,56 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertNotNil(manager.lastCheckedAt)
     }
 
+    @MainActor
+    func testApplyFixtureStampsLastCheckedAtForSeededUpdateScenario() {
+        let manager = UpdateManager()
+        let fixture = AppTestFixture.UpdateFixture(
+            state: .updateAvailable,
+            release: UpdateManager.ReleaseInfo(
+                tagName: "v1.2.9",
+                htmlURL: URL(string: "https://example.com/release")!,
+                publishedAt: ISO8601DateFormatter().date(from: "2026-04-15T08:00:00Z")!,
+                assets: [
+                    .init(
+                        name: "TowerIsland-1.2.9.dmg",
+                        browserDownloadURL: URL(string: "https://example.com/TowerIsland-1.2.9.dmg")!
+                    )
+                ]
+            ),
+            version: "1.2.9",
+            stage: nil,
+            message: nil
+        )
+
+        manager.applyFixture(fixture)
+
+        XCTAssertEqual(manager.state, .updateAvailable(version: "1.2.9"))
+        XCTAssertNotNil(manager.lastCheckedAt)
+    }
+
+    @MainActor
+    func testApplyFixtureKeepsLastCheckedAtNilForIdleFixture() {
+        let manager = UpdateManager()
+        let fixture = AppTestFixture.UpdateFixture(
+            state: .idle,
+            release: UpdateManager.ReleaseInfo(
+                tagName: "v1.2.9",
+                htmlURL: URL(string: "https://example.com/release")!,
+                publishedAt: ISO8601DateFormatter().date(from: "2026-04-15T08:00:00Z")!,
+                assets: []
+            ),
+            version: nil,
+            stage: nil,
+            message: nil
+        )
+
+        manager.applyFixture(fixture)
+
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertNil(manager.lastCheckedAt)
+        XCTAssertEqual(manager.latestRelease?.tagName, "v1.2.9")
+    }
+
     func testNormalizesReleaseTagsByRemovingLeadingV() {
         XCTAssertEqual(UpdateManager.normalize(version: " v1.2.3 "), "1.2.3")
         XCTAssertEqual(UpdateManager.normalize(version: "V2.0.0"), "2.0.0")

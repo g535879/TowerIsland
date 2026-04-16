@@ -25,6 +25,7 @@ struct PermissionApprovalView: View {
                 .onAppear { onComplete() }
             }
         }
+        .accessibilityIdentifier(TestAccessibility.permissionPanel)
     }
 
     private var displayAgent: AgentType {
@@ -118,6 +119,7 @@ struct PermissionApprovalView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("n", modifiers: .command)
+                .accessibilityIdentifier(TestAccessibility.permissionDenyButton)
 
                 Button {
                     manager.approvePermission(session: session)
@@ -133,6 +135,7 @@ struct PermissionApprovalView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut("y", modifiers: .command)
+                .accessibilityIdentifier(TestAccessibility.permissionApproveButton)
             }
         }
         .padding(.horizontal, 16)

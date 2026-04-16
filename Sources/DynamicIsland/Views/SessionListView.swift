@@ -15,6 +15,7 @@ struct SessionListView: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
         }
+        .accessibilityIdentifier(TestAccessibility.sessionList)
     }
 }
 
@@ -88,6 +89,7 @@ struct SessionCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(TestAccessibility.sessionCard(id: session.id))
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering

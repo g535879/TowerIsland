@@ -2,6 +2,29 @@ import XCTest
 @testable import TowerIsland
 
 final class PreferencesViewTests: XCTestCase {
+    func testAccessibilityIdentifiersRemainStable() {
+        XCTAssertEqual(TestAccessibility.islandRoot, "island.root")
+        XCTAssertEqual(TestAccessibility.collapsedPill, "island.collapsed-pill")
+        XCTAssertEqual(TestAccessibility.sessionList, "island.session-list")
+        XCTAssertEqual(TestAccessibility.permissionPanel, "island.permission-panel")
+        XCTAssertEqual(TestAccessibility.permissionApproveButton, "island.permission-approve")
+        XCTAssertEqual(TestAccessibility.permissionDenyButton, "island.permission-deny")
+        XCTAssertEqual(TestAccessibility.questionPanel, "island.question-panel")
+        XCTAssertEqual(TestAccessibility.planPanel, "island.plan-panel")
+        XCTAssertEqual(TestAccessibility.planApproveButton, "island.plan-approve")
+        XCTAssertEqual(TestAccessibility.planRejectButton, "island.plan-reject")
+        XCTAssertEqual(TestAccessibility.planFeedbackField, "island.plan-feedback")
+        XCTAssertEqual(TestAccessibility.preferencesRoot, "preferences.root")
+        XCTAssertEqual(TestAccessibility.updateCheckButton, "preferences.update-check")
+        XCTAssertEqual(TestAccessibility.updateInstallButton, "preferences.update-install")
+        XCTAssertEqual(TestAccessibility.updateStatusLabel, "preferences.update-status")
+    }
+
+    func testAccessibilityIdentifierBuildersRemainStable() {
+        XCTAssertEqual(TestAccessibility.sessionCard(id: "session-123"), "island.session-card.session-123")
+        XCTAssertEqual(TestAccessibility.questionOption(index: 2), "island.question-option.2")
+    }
+
     func testInstallButtonHiddenWhenReleaseIsNotNewer() {
         XCTAssertFalse(
             PreferencesView.shouldShowInstallButton(

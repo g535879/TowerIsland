@@ -25,6 +25,7 @@ struct NotchContentView: View {
     @State private var collapseGeneration = 0
     /// Last known expanded `shapeHeight` (black panel), used to interpolate notch corner radii with `shapeHeight` during spring (avoids boolean snap).
     @State private var cachedExpandedShapeHeight: CGFloat = 220
+    @AppStorage("disableAnimations") private var disableAnimations = false
     @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 3.0
     @AppStorage("smartSuppression") private var smartSuppression = true
     @AppStorage("autoHideWhenNoActiveSessions") private var autoHideWhenNoActiveSessions = false
@@ -122,6 +123,60 @@ struct NotchContentView: View {
     private static let collapseSpring = Animation.spring(response: 0.35, dampingFraction: 0.8)
     private static let contentFade = Animation.easeInOut(duration: 0.2)
 
+    struct TransitionTiming: Equatable {
+        let expandStartDelay: TimeInterval
+        let contentRevealDelay: TimeInterval
+        let collapseCompletionDelay: TimeInterval
+    }
+
+    static func transitionTiming(disableAnimations: Bool) -> TransitionTiming {
+        disableAnimations
+            ? TransitionTiming(expandStartDelay: 0, contentRevealDelay: 0, collapseCompletionDelay: 0)
+            : TransitionTiming(expandStartDelay: 0.05, contentRevealDelay: 0.12, collapseCompletionDelay: 0.45)
+    }
+
+    private var transitionTiming: TransitionTiming {
+        Self.transitionTiming(disableAnimations: disableAnimations)
+    }
+
+    static func initialAutoExpandedState(for manager: SessionManager) -> IslandState? {
+        guard let session = manager.prioritizedInteractionSession else { return nil }
+
+        switch session.status {
+        case .waitingPermission:
+            return .permission(session.id)
+        case .waitingAnswer:
+            return .question(session.id)
+        case .waitingPlanReview:
+            return .planReview(session.id)
+        default:
+            return nil
+        }
+    }
+
+    static func initialIslandState(for manager: SessionManager) -> IslandState {
+        initialAutoExpandedState(for: manager) ?? .collapsed
+    }
+
+    static func diagnosticsIslandState(for manager: SessionManager, currentState: IslandState) -> IslandState {
+        if let interactionState = initialAutoExpandedState(for: manager) {
+            return interactionState
+        }
+
+        switch currentState {
+        case .expanded:
+            return .expanded
+        case .collapsed, .permission, .question, .planReview:
+            return .collapsed
+        }
+    }
+
+    @MainActor
+    static func handleIslandStateChange(_ newState: IslandState, manager: SessionManager) {
+        manager.currentIslandState = newState
+        AppDelegate.shared?.refreshDiagnostics(islandState: manager.diagnosticsIslandState)
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             UnevenRoundedRectangle(
@@ -168,6 +223,7 @@ struct NotchContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
         .contentShape(Rectangle())
+        .accessibilityIdentifier(TestAccessibility.islandRoot)
         .onChange(of: expandedHeight) { _, _ in
             if case .expanded = state {
                 cachedExpandedShapeHeight = max(collapsedShapeHeight + 1, expandedHeight)
@@ -190,9 +246,21 @@ struct NotchContentView: View {
                 }
             }
         }
+        .onChange(of: state) { _, newState in
+            Self.handleIslandStateChange(newState, manager: manager)
+        }
         .onAppear {
             if let w = NSApp.windows.first(where: { $0 is NotchWindow }) as? NotchWindow {
                 islandObscuredByNotch = w.isObscuredByPhysicalNotch()
+            }
+            let initialState = Self.initialIslandState(for: manager)
+            state = initialState
+            Self.handleIslandStateChange(initialState, manager: manager)
+            if initialState != .collapsed {
+                showContent = true
+                if case .expanded = initialState {
+                    cachedExpandedShapeHeight = max(collapsedShapeHeight + 1, expandedHeight)
+                }
             }
             reportSize()
             startHoverPolling()
@@ -222,6 +290,7 @@ struct NotchContentView: View {
         collapseGeneration += 1
         collapseAnimating = false
         expandPending = true
+        let timing = transitionTiming
         let target = targetSize(for: newState)
         if case .expanded = newState {
             let count = manager.visibleSessions.count
@@ -229,30 +298,50 @@ struct NotchContentView: View {
             cachedExpandedShapeHeight = Self.expandedPanelHeaderHeight + listH + (Self.expandedPanelBottomInset - 8)
         }
         onSizeChange?(target.width, target.height, true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(Self.expandSpring) {
+        let runExpansion = {
+            if disableAnimations {
                 self.isHovering = false
                 self.state = newState
-            }
-            withAnimation(Self.contentFade.delay(0.12)) {
                 self.showContent = true
+            } else {
+                withAnimation(Self.expandSpring) {
+                    self.isHovering = false
+                    self.state = newState
+                }
+                withAnimation(Self.contentFade.delay(timing.contentRevealDelay)) {
+                    self.showContent = true
+                }
             }
             self.expandPending = false
+        }
+
+        if timing.expandStartDelay == 0 {
+            runExpansion()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timing.expandStartDelay) {
+                runExpansion()
+            }
         }
     }
 
     private func collapse() {
         collapseGeneration += 1
         let generation = collapseGeneration
+        let timing = transitionTiming
         lastCollapseAt = Date()
         collapseAnimating = true
-        withAnimation(Self.collapseSpring) {
+        if disableAnimations {
             showContent = false
             state = .collapsed
+        } else {
+            withAnimation(Self.collapseSpring) {
+                showContent = false
+                state = .collapsed
+            }
         }
         // Defer NSWindow frame sync to the next main runloop turn so we are not inside SwiftUI's
         // animation/layout commit (reduces AppKit exceptions in _reallySetFrame: during collapse).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+        let finishCollapse = {
             guard generation == self.collapseGeneration, self.state == .collapsed else { return }
             let w = self.pillWidth
             let h = self.collapsedOuterHeight
@@ -262,6 +351,14 @@ struct NotchContentView: View {
                     window.resizeToFitCollapse(contentWidth: w, contentHeight: h)
                 }
                 self.collapseAnimating = false
+            }
+        }
+
+        if timing.collapseCompletionDelay == 0 {
+            finishCollapse()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timing.collapseCompletionDelay) {
+                finishCollapse()
             }
         }
     }
@@ -423,16 +520,8 @@ struct NotchContentView: View {
     }
 
     private func autoExpandForInteraction() {
-        guard let session = manager.activeSessions.first(where: {
-            $0.status == .waitingPermission || $0.status == .waitingAnswer || $0.status == .waitingPlanReview
-        }) else { return }
-
-        switch session.status {
-        case .waitingPermission: expand(to: .permission(session.id))
-        case .waitingAnswer: expand(to: .question(session.id))
-        case .waitingPlanReview: expand(to: .planReview(session.id))
-        default: break
-        }
+        guard let interactionState = Self.initialAutoExpandedState(for: manager) else { return }
+        expand(to: interactionState)
     }
 
     private func startHoverPolling() {
@@ -482,10 +571,18 @@ struct NotchContentView: View {
                 expandedAt = Date()
                 expand(to: .expanded)
             } else if !isHovering {
-                withAnimation(.easeInOut(duration: 0.2)) { isHovering = true }
+                if disableAnimations {
+                    isHovering = true
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) { isHovering = true }
+                }
             }
         } else if !inside && isHovering && !isExpanded {
-            withAnimation(.easeInOut(duration: 0.2)) { isHovering = false }
+            if disableAnimations {
+                isHovering = false
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) { isHovering = false }
+            }
         } else if ExpandedAutoCollapsePolicy.shouldCollapseOnMouseExit(
             isPointerInside: inside,
             state: state,

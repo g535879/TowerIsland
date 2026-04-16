@@ -6,7 +6,9 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/.build"
 APP_NAME="Tower Island"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
-BRIDGE_INSTALL_DIR="$HOME/.tower-island/bin"
+UI_DRIVER_BIN="$BUILD_DIR/release/TowerIslandUITestDriver"
+DEFAULT_BRIDGE_INSTALL_DIR="$HOME/.tower-island/bin"
+BRIDGE_INSTALL_DIR="${TOWER_ISLAND_BIN_DIR:-$DEFAULT_BRIDGE_INSTALL_DIR}"
 CLI_SRC="$PROJECT_DIR/Scripts/tower-island"
 CLI_LIB_DIR="$PROJECT_DIR/Scripts/lib"
 APP_CLI_DIR="$APP_BUNDLE/Contents/Resources/cli"
@@ -115,9 +117,15 @@ chmod +x "$BRIDGE_INSTALL_DIR/tower-island"
 echo ""
 echo "Build complete!"
 echo "  App:    $APP_BUNDLE"
+echo "  UI:     $UI_DRIVER_BIN"
 echo "  Bridge: $BRIDGE_INSTALL_DIR/di-bridge"
 echo "  CLI:    $BRIDGE_INSTALL_DIR/tower-island"
-tower_island_configure_cli_path
+if [[ "${TOWER_ISLAND_SKIP_PATH_CONFIGURE:-0}" == "1" ]]; then
+    echo ""
+    echo "Skipping CLI PATH configuration."
+else
+    tower_island_configure_cli_path
+fi
 echo ""
 echo "To install, run:"
 echo "  cp -R \"$APP_BUNDLE\" /Applications/"

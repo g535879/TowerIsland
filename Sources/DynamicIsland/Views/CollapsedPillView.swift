@@ -11,16 +11,19 @@ struct CollapsedPillView: View {
     private var visible: [AgentSession] { manager.visibleSessions }
 
     var body: some View {
-        Group {
-            if obscuredByNotch {
-                obscuredBarContent
-            } else {
-                unobscuredCenteredIcons
+        Button(action: onTap) {
+            Group {
+                if obscuredByNotch {
+                    obscuredBarContent
+                } else {
+                    unobscuredCenteredIcons
+                }
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(TestAccessibility.collapsedPill)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .onTapGesture { onTap() }
     }
 
     private var obscuredBarContent: some View {

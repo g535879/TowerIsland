@@ -29,6 +29,7 @@ struct QuestionAnswerView: View {
                 Color.clear.frame(height: 1).onAppear { onComplete() }
             }
         }
+        .accessibilityIdentifier(TestAccessibility.questionPanel)
         // Keep frozenQuestion in sync until user submits (handles agents like OpenCode that
         // fire multiple question.asked events as the question is streamed/updated).
         // Once submittedAnswer is set the snapshot is locked — preventing height jump on answer.
@@ -114,6 +115,7 @@ struct QuestionAnswerView: View {
                     .buttonStyle(.plain)
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                     .disabled(submittedAnswer != nil)
+                    .accessibilityIdentifier(TestAccessibility.questionOption(index: index))
                 }
             }
         }
